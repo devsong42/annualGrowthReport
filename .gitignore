@@ -1,0 +1,35 @@
+# 依赖
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# SQLite 数据库与备份
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+backup/
+
+# 环境变量与密钥
+.env
+.env.*
+
+# 学员数据文件（含个人信息，不入库）
+*.xlsx
+*.xls
+*.csv
+!templates/*.xlsx
+
+# 静态资源（背景图体积大，如需版本管理请删除下面两行）
+static/images/
+images/
+
+# 日志
+logs/
+*.log
+
+# 编辑器与系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
