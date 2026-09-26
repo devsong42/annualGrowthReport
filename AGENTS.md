@@ -97,14 +97,18 @@ CREATE TABLE sessions (
 - 登录成功后 `session.regenerate()` 防会话固定攻击；Session 存进 SQLite，重启容器仍有效
 - `/api/report` 返回 camelCase 字段：`name`、`department`、`joinDays`、`volunteerHours`、`activityCount`、`partner`、`message`
 
-## 7. 前端实现要点
+## 7. 前端实现要点（已实现，`static/`）
 
-- Swiper 垂直翻页配置：`direction: 'vertical'`、`speed: 800`（网易云式阻尼感约 700–900）、`mousewheel: true`、`pagination.clickable`
-- 动画用 `swiper.animate` 插件，走 `swiper-animate-effect` / `swiper-animate-duration` / `swiper-animate-delay` 属性，翻页进出自动触发与重置（比手动加删 class 更省事）
-- 页面动画触发点：Swiper 的 `slideChangeTransitionStart` 回调
-- 登录成功后 `fetch('/api/report')` 拿数据，用 JS 写入各页占位元素
-- 大数字滚动效果（0 滚到目标值）用 `requestAnimationFrame` 实现
-- 背景图尺寸建议 750×1334 或 1080×1920；单图压缩到 200KB 以内，8 张图总量控制 2MB 以内
+页面：1 个登录页（独立于 Swiper）+ 7 屏报告页（开场 → 加入天数 → 志愿时长 → 活动次数 → 年度伙伴 → 部长寄语 → 结尾）。文件为 `index.html` / `style.css` / `app.js`，第三方库放 `static/vendor/`（Swiper 11.2.10、Animate.css 4.1.1，已本地化，不从 CDN 引）。
+
+- Swiper 垂直翻页：`direction: 'vertical'`、`speed: 800`（网易云式阻尼感约 700–900）、`mousewheel: true`、`pagination.clickable`，在 `slideChangeTransitionStart` 里触发当前屏动画
+- **没用 `swiper.animate` 插件**（它是 Swiper 3/4 时代产物，与现代版本兼容性没保证），改为自实现：元素写 `data-animate="fadeInUp"`（可加 `data-delay` / `data-duration`），进入该屏时先移除再挂上 `animate__animated animate__<效果>`，配合 `void offsetWidth` 强制重排，实现「再次进入重新播放」
+- 大数字滚动：标 `data-count="字段名"`，进入该屏时用 `requestAnimationFrame` 从 0 滚到目标值（整数 0 位小数、REAL 1 位）
+- 数据填充：标 `data-field="字段名"`，用 `textContent` 写入（不用 innerHTML，避免 XSS）；寄语用 `white-space: pre-wrap` 保留换行
+- 背景图：每屏写 `data-bg="01-opening.jpg"`，JS 从 `static/images/` 按文件名预加载，成功才替换背景，否则用页面自带的深色渐变；有图时自动加 45% 暗层保证文字可读
+  - 约定文件名：`01-opening.jpg`、`02-days.jpg`、`03-hours.jpg`、`04-activities.jpg`、`05-partner.jpg`、`06-message.jpg`、`07-ending.jpg`（哪些没有就哪屏用渐变，缺图会在浏览器控制台看到 404，属正常）
+  - 背景图目录不入库，建议 750×1334 或 1080×1920，单图压到 200KB 以内、7 张总量 2MB 以内
+- Session 过期或未登录时 `/api/report` 返回 401，前端自动停在登录页；登录失败/网络异常都在表单里显示提示，不用 alert
 
 ## 8. 部署与运维
 
@@ -130,7 +134,7 @@ CREATE TABLE sessions (
 
 1. ~~**服务器初始化**~~（已完成）：Docker 与 Compose 就位，系统 nginx 已停用，对外 80 端口由 `report-nginx` 接管
 2. ~~**后端 API**~~（已完成）：建库建表、登录/报告/登出接口、Excel 导入脚本，详见 §12
-3. **前端对接 API**（下一步）：登录调 `/api/login`，报告数据取 `/api/report`（Swiper 与动画代码不用改）
+3. ~~**前端对接 API**~~（已完成）：登录页 + 7 屏报告页，实现细节见 §7
 4. **部署与 HTTPS**：Nginx 反代已就位，待域名与 Certbot 证书
 5. **测试与交付**
 
@@ -168,8 +172,10 @@ CREATE TABLE sessions (
 | 应用日志 | `docker compose logs -f app` |
 | 停止（保留数据） | `docker compose down` |
 | 只改前端静态文件 | 直接改 `static/` 内容，无需重启容器 |
+| 改了 nginx 配置 | `docker compose exec nginx nginx -s reload`（配置以目录形式挂载，改完 reload 即生效；若改了挂载本身才需要 `docker compose up -d nginx`） |
+| 重新构建镜像 | `docker compose up -d --build`（构建走宿主机网络，约十几秒） |
 
-**文件对应关系**：`docker-compose.yml`（服务编排）→ `nginx/default.conf`（挂载为 `/etc/nginx/conf.d/default.conf`）→ `static/`（挂载为 `/usr/share/nginx/html`，当前只有部署自检占位页）→ `server.js`（app 入口）+ `db.js`（建库建表）+ `session-store.js`（会话存储）+ `scripts/import-excel.js`（Excel 导入）。
+**文件对应关系**：`docker-compose.yml`（服务编排）→ `nginx/default.conf`（以目录形式挂载为 `/etc/nginx/conf.d`）→ `static/`（挂载为 `/usr/share/nginx/html`，含登录页与报告页、`vendor/` 本地化前端库、`images/` 背景图目录）→ `server.js`（app 入口）+ `db.js`（建库建表）+ `session-store.js`（会话存储）+ `scripts/import-excel.js`（Excel 导入）。
 
 ## 12. 后端现状与 Excel 导入
 
@@ -205,3 +211,4 @@ docker compose exec app node -e "const db=require('./db');db.prepare('delete fro
 - 服务器发行版已确认：本机即 Debian 13，Docker 与 Compose 均已装好
 - HTTPS：需要域名解析到公网入口（当前公网入口是 frps，需在 frpc.toml 增加 80/443 的 tcp 代理）
 - 密码策略：初始密码规则如何设定
+- 背景图：尚未提供，当前用每屏自带渐变占位；放好图后放进 `static/images/` 即可自动生效（文件名约定见 §7）

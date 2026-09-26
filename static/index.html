@@ -1,50 +1,102 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>部署自检 · 年度成长报告</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 32px 20px;
-      background: #0f172a;
-      color: #e2e8f0;
-      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-      line-height: 1.7;
-    }
-    h1 { font-size: 20px; margin: 0 0 12px; }
-    p { color: #94a3b8; font-size: 14px; margin: 0 0 20px; }
-    pre {
-      background: #1e293b;
-      border-left: 3px solid #38bdf8;
-      border-radius: 6px;
-      padding: 16px;
-      font-size: 13px;
-      white-space: pre-wrap;
-      word-break: break-all;
-      margin: 0;
-    }
-    .ok { border-left-color: #4ade80; }
-    .fail { border-left-color: #f87171; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<title>年度成长报告</title>
+<link rel="stylesheet" href="vendor/animate.min.css">
+<link rel="stylesheet" href="vendor/swiper-bundle.min.css">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>部署自检</h1>
-  <p>占位页，用于确认 Nginx 静态托管与 <code>/api</code> 反向代理均正常；年度报告页面完成后会被替换。</p>
-  <pre id="out">正在检测后端接口…</pre>
-  <script>
-    const out = document.getElementById('out');
-    fetch('/api/health')
-      .then(r => r.json())
-      .then(d => {
-        out.className = 'ok';
-        out.textContent = '静态页面与 API 反代均正常\n' + JSON.stringify(d, null, 2);
-      })
-      .catch(e => {
-        out.className = 'fail';
-        out.textContent = '静态页面正常，但 /api/health 请求失败：' + e.message;
-      });
-  </script>
+
+<!-- 登录页 -->
+<section id="loginScreen" class="screen login">
+  <div class="login-inner">
+    <p class="login-kicker" data-animate="fadeInDown">ANNUAL REPORT</p>
+    <h1 class="login-title" data-animate="fadeInUp" data-delay="120ms">年度成长报告</h1>
+    <p class="login-desc" data-animate="fadeInUp" data-delay="240ms">输入学号与密码，打开属于你的这一年</p>
+
+    <form id="loginForm" class="login-form" novalidate>
+      <input id="studentId" class="field" type="text" inputmode="numeric" autocomplete="username"
+             placeholder="学号" maxlength="32" required>
+      <input id="password" class="field" type="password" autocomplete="current-password"
+             placeholder="密码" maxlength="64" required>
+      <p id="loginError" class="login-error" role="alert" hidden></p>
+      <button id="loginBtn" class="login-btn" type="submit">进入报告</button>
+    </form>
+  </div>
+</section>
+
+<!-- 报告页 -->
+<div id="reportScreen" class="screen report" hidden>
+  <div class="swiper" id="reportSwiper">
+    <div class="swiper-wrapper">
+
+      <section class="swiper-slide page page-opening" data-bg="01-opening.jpg">
+        <div class="page-inner">
+          <p class="line" data-animate="fadeInDown">今年，我们一起走过</p>
+          <h2 class="huge" data-animate="fadeInUp" data-delay="150ms"><span data-field="name"></span></h2>
+          <p class="sub" data-animate="fadeInUp" data-delay="350ms"><span data-field="department"></span></p>
+          <p class="swipe-hint">上滑继续</p>
+        </div>
+      </section>
+
+      <section class="swiper-slide page page-days" data-bg="02-days.jpg">
+        <div class="page-inner">
+          <p class="line" data-animate="fadeIn">你加入我们已经</p>
+          <p class="number" data-animate="zoomIn" data-delay="150ms"><span data-count="joinDays">0</span><small>天</small></p>
+          <p class="sub" data-animate="fadeInUp" data-delay="400ms">每一天，都算数</p>
+        </div>
+      </section>
+
+      <section class="swiper-slide page page-hours" data-bg="03-hours.jpg">
+        <div class="page-inner">
+          <p class="line" data-animate="fadeIn">今年你的志愿服务时长</p>
+          <p class="number" data-animate="zoomIn" data-delay="150ms"><span data-count="volunteerHours">0</span><small>小时</small></p>
+          <p class="sub" data-animate="fadeInUp" data-delay="400ms">把时间给了值得的人</p>
+        </div>
+      </section>
+
+      <section class="swiper-slide page page-activities" data-bg="04-activities.jpg">
+        <div class="page-inner">
+          <p class="line" data-animate="fadeIn">这一年你参加了</p>
+          <p class="number" data-animate="zoomIn" data-delay="150ms"><span data-count="activityCount">0</span><small>次</small></p>
+          <p class="sub" data-animate="fadeInUp" data-delay="400ms">活动，每一次都在场</p>
+        </div>
+      </section>
+
+      <section class="swiper-slide page page-partner" data-bg="05-partner.jpg">
+        <div class="page-inner">
+          <p class="line" data-animate="fadeIn">今年的年度伙伴是</p>
+          <h2 class="huge" data-animate="zoomIn" data-delay="150ms"><span data-field="partner"></span></h2>
+          <p class="sub" data-animate="fadeInUp" data-delay="400ms">并肩做事的默契，很难得</p>
+        </div>
+      </section>
+
+      <section class="swiper-slide page page-message" data-bg="06-message.jpg">
+        <div class="page-inner">
+          <p class="line" data-animate="fadeIn">部长想对你说</p>
+          <p class="message" data-animate="fadeInUp" data-delay="200ms" data-field="message"></p>
+        </div>
+      </section>
+
+      <section class="swiper-slide page page-ending" data-bg="07-ending.jpg">
+        <div class="page-inner">
+          <p class="line" data-animate="fadeInUp">这一年，谢谢你在</p>
+          <h2 class="huge" data-animate="zoomIn" data-delay="200ms"><span data-field="name"></span></h2>
+          <p class="sub" data-animate="fadeInUp" data-delay="450ms">新的一年，继续一起走吧</p>
+          <button id="logoutBtn" class="logout" data-animate="fadeIn" data-delay="800ms" type="button">退出登录</button>
+        </div>
+      </section>
+
+    </div>
+    <div class="swiper-pagination"></div>
+  </div>
+</div>
+
+<script src="vendor/swiper-bundle.min.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

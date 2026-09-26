@@ -38,7 +38,8 @@ services:
       # 配好 HTTPS 后取消注释，并在 nginx/default.conf 中补充 443 server 块
       # - "443:443"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # 挂载整个目录而不是单个文件：单文件 bind mount 在编辑文件后会读到旧 inode
+      - ./nginx:/etc/nginx/conf.d:ro
       - ./static:/usr/share/nginx/html:ro
       # 配 HTTPS 时取消注释，certbot 证书目录与验证目录
       # - ./certbot/conf:/etc/letsencrypt:ro
