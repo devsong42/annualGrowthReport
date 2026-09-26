@@ -190,7 +190,7 @@ CREATE TABLE sessions (
 
 ## 12. 后端现状与 Excel 导入
 
-已实现：`db.js`（SQLite 建库建表）、`session-store.js`（better-sqlite3 会话存储）、`rate-limit.js`（登录失败限流）、`server.js`（`/api/health`、`/api/login`、`/api/password`、`/api/report`、`/api/logout`）、`scripts/import-excel.js`（导入脚本）。
+已实现：`db.js`（SQLite 建库建表）、`session-store.js`（better-sqlite3 会话存储）、`rate-limit.js`（登录失败限流）、`server.js`（`/api/health`、`/api/login`、`/api/password`、`/api/report`、`/api/logout`）、`scripts/import-excel.js`（导入脚本）。另有 `scripts/make-test-tone.js`：生成一段 8 秒测试音乐（`node scripts/make-test-tone.js`，默认写 `static/music/2021001.wav`），用于验证播放链路。
 
 **导入数据步骤**（每学年维护时执行，均在项目根目录）：
 
