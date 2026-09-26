@@ -5,7 +5,7 @@ const XLSX = require('xlsx');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 
-const HEADERS = ['学号', '密码', '姓名', '部门', '加入天数', '志愿时长', '活动次数', '年度伙伴', '部长寄语'];
+const HEADERS = ['学号', '密码', '姓名', '部门', '加入天数', '志愿时长', '活动次数', '年度伙伴', '部长寄语', '背景图目录', '背景音乐'];
 const REQUIRED_HEADERS = ['学号', '姓名'];
 const BCRYPT_ROUNDS = 10;
 
@@ -14,10 +14,10 @@ const findExisting = db.prepare('SELECT password_hash FROM students WHERE studen
 const upsert = db.prepare(`
   INSERT INTO students (
     student_id, name, department, join_days, volunteer_hours,
-    activity_count, partner, message, password_hash
+    activity_count, partner, message, password_hash, bg_dir, bg_music
   ) VALUES (
     @student_id, @name, @department, @join_days, @volunteer_hours,
-    @activity_count, @partner, @message, @password_hash
+    @activity_count, @partner, @message, @password_hash, @bg_dir, @bg_music
   )
   ON CONFLICT(student_id) DO UPDATE SET
     name = excluded.name,
@@ -27,7 +27,9 @@ const upsert = db.prepare(`
     activity_count = excluded.activity_count,
     partner = excluded.partner,
     message = excluded.message,
-    password_hash = excluded.password_hash
+    password_hash = excluded.password_hash,
+    bg_dir = excluded.bg_dir,
+    bg_music = excluded.bg_music
 `);
 
 function usage() {
@@ -52,8 +54,8 @@ function toNumber(value) {
 function writeTemplate(target) {
   const sheet = XLSX.utils.aoa_to_sheet([
     HEADERS,
-    ['2021001', 'init123456', '张三', '技术部', 365, 120, 15, '李四', '愿你保持热爱'],
-    ['2021002', '', '王五', '宣传部', 280, 85, 10, '赵六', '未来可期'],
+    ['2021001', 'init123456', '张三', '技术部', 365, 120, 15, '李四', '愿你保持热爱', '', ''],
+    ['2021002', '', '王五', '宣传部', 280, 85, 10, '赵六', '未来可期', '', ''],
   ]);
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, 'students');
@@ -62,6 +64,7 @@ function writeTemplate(target) {
   XLSX.writeFile(book, target);
   console.log(`模板已生成：${target}`);
   console.log('提示：示例行仅供参照，正式使用时请删掉；密码列留空时，新学员用「学号后六位」作初始密码。');
+  console.log('「背景图目录」「背景音乐」可留空：留空时自动用 images/学号/ 目录与 music/学号.mp3。');
 }
 
 function readRows(file) {
@@ -109,6 +112,8 @@ function toRecord(row) {
       partner: text('年度伙伴'),
       message: text('部长寄语'),
       password_hash: passwordHash,
+      bg_dir: text('背景图目录') || null,
+      bg_music: text('背景音乐') || null,
     },
   };
 }

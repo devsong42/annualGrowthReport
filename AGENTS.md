@@ -97,6 +97,7 @@ CREATE TABLE sessions (
 - 未知 `/api/*` 路径 → `404 {"error":"接口不存在"}`（JSON，不会回落到首页）
 - 登录成功后 `session.regenerate()` 防会话固定攻击；Session 存进 SQLite，重启容器仍有效
 - `/api/report` 返回 camelCase 字段：`name`、`department`、`joinDays`、`volunteerHours`、`activityCount`、`partner`、`message`
+- `/api/report` 还会返回 `backgrounds`（**文件名去掉扩展名 → URL** 的映射，只含磁盘上真实存在的图）和 `music`（音频 URL 或 `null`）。后端只读挂载了 `static/`，直接查文件是否存在，前端因此不需要试探、也不会产生 404
 - 防暴力破解：同学号连续失败 5 次锁 10 分钟；同 IP 失败 30 次锁 10 分钟（校园网共用出口，故意放宽）。命中后返回 `429 错误次数过多，请 X 分钟后再试`；计数在进程内存里（`rate-limit.js`），重启容器即清空
 - 改密码接口：要求当前密码正确、新密码 6–64 位且与旧密码不同；成功后删除该学员除当前设备外的所有会话
 
@@ -108,9 +109,14 @@ CREATE TABLE sessions (
 - **没用 `swiper.animate` 插件**（它是 Swiper 3/4 时代产物，与现代版本兼容性没保证），改为自实现：元素写 `data-animate="fadeInUp"`（可加 `data-delay` / `data-duration`），进入该屏时先移除再挂上 `animate__animated animate__<效果>`，配合 `void offsetWidth` 强制重排，实现「再次进入重新播放」
 - 大数字滚动：标 `data-count="字段名"`，进入该屏时用 `requestAnimationFrame` 从 0 滚到目标值（整数 0 位小数、REAL 1 位）
 - 数据填充：标 `data-field="字段名"`，用 `textContent` 写入（不用 innerHTML，避免 XSS）；寄语用 `white-space: pre-wrap` 保留换行
-- 背景图：每屏写 `data-bg="01-opening.jpg"`，JS 从 `static/images/` 按文件名预加载，成功才替换背景，否则用页面自带的深色渐变；有图时自动加 45% 暗层保证文字可读
-  - 约定文件名：`01-opening.jpg`、`02-days.jpg`、`03-hours.jpg`、`04-activities.jpg`、`05-partner.jpg`、`06-message.jpg`、`07-ending.jpg`（哪些没有就哪屏用渐变，缺图会在浏览器控制台看到 404，属正常）
-  - 背景图目录不入库，建议 750×1334 或 1080×1920，单图压到 200KB 以内、7 张总量 2MB 以内
+- 背景图：每屏写 `data-bg="01-opening"`（不带扩展名），JS 用后端返回的 `backgrounds` 映射直接设置；没配图的页面保留页面自带的深色渐变，有图时自动加 45% 暗层保证文字可读
+  - 查找顺序：`static/images/<背景图目录>/`（目录留空时用学号）优先，其次共享的 `static/images/`
+  - 约定的键名：`01-opening`、`02-days`、`03-hours`、`04-activities`、`05-partner`、`06-message`、`07-ending`；扩展名不限（jpg/jpeg/png/webp）
+  - 建议 750×1334 或 1080×1920，单图压到 200KB 以内、7 张总量 2MB 以内；`static/images/`、`static/music/` 都不入库
+- 背景音乐：后端返回 `music` URL 时，报告页右上角出现圆形开关按钮（播放态有呼吸动画，暂停态画一道斜杠）
+  - 登录后自动尝试播放；被浏览器自动播放策略拦下时按钮显示为暂停态，等用户点一下
+  - 开关选择记在 `localStorage`（键 `report.bgm`），主动关过就不再自动响；退出登录会停止播放
+  - 文件查找：优先 Excel 的「背景音乐」列（带不带扩展名都行），留空时找与学号同名的音频（mp3/m4a/ogg/wav）
 - Session 过期或未登录时 `/api/report` 返回 401，前端自动停在登录页；登录失败/网络异常都在表单里显示提示，不用 alert
 
 ## 8. 部署与运维
@@ -119,7 +125,7 @@ CREATE TABLE sessions (
 
 **docker-compose 要点**：
 
-- `app` 服务不映射端口到宿主机，仅由 Nginx 经内部网络转发（更安全）；数据库卷 `sqlite_data` → `/app/data`（`DB_PATH=/app/data/report.db`），`./import` → `/app/import` 供导入脚本读取 Excel
+- `app` 服务不映射端口到宿主机，仅由 Nginx 经内部网络转发（更安全）；数据库卷 `sqlite_data` → `/app/data`（`DB_PATH=/app/data/report.db`），`./import` → `/app/import` 供导入脚本读 Excel，`./static` → `/app/static`（`ro`）供后端判断学员的背景图/音乐文件是否存在
 - `nginx` 服务映射 `${HTTP_PORT}:80`，挂载 `nginx/default.conf` 与 `./static`（`ro`），`depends_on` app 的健康检查
 - 服务间通过自定义 bridge 网络 `report-network` 通信，Nginx 中 `proxy_pass http://app:3000`
 - `app.build.network: host`：容器默认 bridge 网络没有 IPv6 路由，构建期借用宿主机网络（原因见 §11）
@@ -180,7 +186,7 @@ CREATE TABLE sessions (
 | 改了 nginx 配置 | `docker compose exec nginx nginx -s reload`（配置以目录形式挂载，改完 reload 即生效；若改了挂载本身才需要 `docker compose up -d nginx`） |
 | 重新构建镜像 | `docker compose up -d --build`（构建走宿主机网络，约十几秒） |
 
-**文件对应关系**：`docker-compose.yml`（服务编排）→ `nginx/default.conf`（以目录形式挂载为 `/etc/nginx/conf.d`）→ `static/`（挂载为 `/usr/share/nginx/html`，含登录页与报告页、`vendor/` 本地化前端库、`images/` 背景图目录）→ `server.js`（app 入口）+ `db.js`（建库建表）+ `session-store.js`（会话存储）+ `rate-limit.js`（登录失败限流）+ `scripts/import-excel.js`（Excel 导入）。
+**文件对应关系**：`docker-compose.yml`（服务编排）→ `nginx/default.conf`（以目录形式挂载为 `/etc/nginx/conf.d`）→ `static/`（挂载为 `/usr/share/nginx/html`，含登录页与报告页、`vendor/` 本地化前端库、`images/` 背景图、`music/` 背景音乐）→ `server.js`（app 入口）+ `db.js`（建库建表）+ `session-store.js`（会话存储）+ `rate-limit.js`（登录失败限流）+ `scripts/import-excel.js`（Excel 导入）。
 
 ## 12. 后端现状与 Excel 导入
 
@@ -196,7 +202,7 @@ docker compose exec app node scripts/import-excel.js --template
 docker compose exec app node scripts/import-excel.js import/学员数据.xlsx
 ```
 
-表头（中文，第一行）：`学号、密码、姓名、部门、加入天数、志愿时长、活动次数、年度伙伴、部长寄语`。
+表头（中文，第一行）：`学号、密码、姓名、部门、加入天数、志愿时长、活动次数、年度伙伴、部长寄语、背景图目录、背景音乐`（最后两列可选）。
 
 导入规则：按学号 upsert（`INSERT ... ON CONFLICT DO UPDATE`）。密码列的三种情况：
 
@@ -205,6 +211,12 @@ docker compose exec app node scripts/import-excel.js import/学员数据.xlsx
 - 留空且是新学员 → **用「学号后六位」作初始密码**（如 2021003 → `021003`），导入结束会提示有多少人用了初始密码
 
 运行结束会打印「成功 N 条，跳过 M 条」。
+
+**学员专属的背景图与背景音乐**（都以 Excel 为准，重新导入时留空即回到默认）：
+
+- 「背景图目录」留空 → 自动用 `static/images/<学号>/`；填了值就用 `static/images/<该值>/`
+- 「背景音乐」留空 → 自动找 `static/music/<学号>.mp3`（或 .m4a/.ogg/.wav）；填了值就用文件里已存在的那个（可多人共用同一首）
+- 文件只需丢进对应目录，**不用改代码、也不用重启容器**：后端每次请求实时查文件
 
 **库内有 3 个测试账号**：2021001 张三、2021002 李四（密码 `init123456`），2021003 王五（密码是学号后六位 `021003`，用于验证「初始密码」链路）。导入真实数据后可清理：
 

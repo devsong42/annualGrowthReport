@@ -18,7 +18,9 @@ db.exec(`
     activity_count INTEGER,
     partner TEXT,
     message TEXT,
-    password_hash TEXT NOT NULL
+    password_hash TEXT NOT NULL,
+    bg_dir TEXT,
+    bg_music TEXT
   );
 
   CREATE TABLE IF NOT EXISTS sessions (
@@ -27,5 +29,11 @@ db.exec(`
     expire INTEGER
   );
 `);
+
+// CREATE TABLE IF NOT EXISTS 不会给已存在的表补字段，老库需要手动补列
+const studentColumns = db.prepare('PRAGMA table_info(students)').all().map(column => column.name);
+for (const column of ['bg_dir', 'bg_music']) {
+  if (!studentColumns.includes(column)) db.exec(`ALTER TABLE students ADD COLUMN ${column} TEXT`);
+}
 
 module.exports = db;

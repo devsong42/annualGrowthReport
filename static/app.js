@@ -1,8 +1,10 @@
-const BACKGROUND_DIR = 'images/';
 const FALLBACK = {
   partner: '（暂无）',
   message: '（暂无寄语）',
 };
+
+const MUSIC_PREF_KEY = 'report.bgm';
+const MUSIC_VOLUME = 0.6;
 
 const loginScreen = document.querySelector('#loginScreen');
 const reportScreen = document.querySelector('#reportScreen');
@@ -22,6 +24,8 @@ const newPasswordInput = document.querySelector('#newPassword');
 const confirmPasswordInput = document.querySelector('#confirmPassword');
 const studentIdInput = document.querySelector('#studentId');
 const passwordInput = document.querySelector('#password');
+const bgm = document.querySelector('#bgm');
+const musicToggle = document.querySelector('#musicToggle');
 
 let swiper = null;
 let reportData = null;
@@ -106,17 +110,76 @@ function renderReport(data) {
   });
 }
 
-function loadBackgrounds() {
+// 后端只返回确实存在的图片地址，这里不用再试探
+function applyBackgrounds(backgrounds) {
   document.querySelectorAll('.page[data-bg]').forEach((page) => {
-    const url = `${BACKGROUND_DIR}${page.dataset.bg}`;
-    const image = new Image();
-    image.onload = () => {
-      page.style.backgroundImage = `url("${url}")`;
-      page.classList.add('has-bg');
-    };
-    image.src = url;
+    const url = backgrounds && backgrounds[page.dataset.bg];
+    if (!url) return; // 没配图就保留页面自带的渐变
+    page.style.backgroundImage = `url("${url}")`;
+    page.classList.add('has-bg');
   });
 }
+
+/* ---------- 背景音乐 ---------- */
+
+function musicPreference() {
+  try {
+    return localStorage.getItem(MUSIC_PREF_KEY);
+  } catch {
+    return null; // 隐私模式下读不到，按默认（自动播放）处理
+  }
+}
+
+function rememberMusicPreference(value) {
+  try {
+    localStorage.setItem(MUSIC_PREF_KEY, value);
+  } catch {
+    // 写不进去不影响本次播放
+  }
+}
+
+function setMusicState(playing) {
+  musicToggle.classList.toggle('is-playing', playing);
+  musicToggle.setAttribute('aria-label', playing ? '关闭背景音乐' : '播放背景音乐');
+}
+
+function playMusic() {
+  bgm.play().then(() => setMusicState(true)).catch(() => setMusicState(false));
+}
+
+function stopMusic() {
+  bgm.pause();
+  setMusicState(false);
+}
+
+function setupMusic(url) {
+  musicToggle.hidden = !url;
+  if (!url) {
+    bgm.removeAttribute('src');
+    setMusicState(false);
+    return;
+  }
+  if (bgm.getAttribute('src') !== url) bgm.setAttribute('src', url);
+  bgm.volume = MUSIC_VOLUME;
+  // 上次是自己关掉的，这次就不要自动响起来
+  if (musicPreference() === 'off') setMusicState(false);
+  else playMusic();
+}
+
+musicToggle.addEventListener('click', () => {
+  if (bgm.paused) {
+    rememberMusicPreference('on');
+    playMusic();
+  } else {
+    rememberMusicPreference('off');
+    stopMusic();
+  }
+});
+
+// 文件缺失或解码失败时，把开关一起藏掉
+bgm.addEventListener('error', () => {
+  musicToggle.hidden = true;
+});
 
 /* ---------- 屏幕切换 ---------- */
 
@@ -134,6 +197,7 @@ function showLogin(message) {
   reportScreen.hidden = true;
   passwordScreen.hidden = true;
   loginScreen.hidden = false;
+  stopMusic();
   loginBtn.disabled = false;
   loginBtn.textContent = '进入报告';
   passwordInput.value = '';
@@ -149,7 +213,8 @@ function enterReport(data) {
   passwordScreen.hidden = true;
   reportScreen.hidden = false;
   hideLoginError();
-  loadBackgrounds();
+  applyBackgrounds(data.backgrounds);
+  setupMusic(data.music);
 
   if (swiper) {
     swiper.slideTo(0, 0);

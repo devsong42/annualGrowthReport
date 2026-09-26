@@ -304,6 +304,55 @@ body {
   background: rgba(255, 255, 255, 0.16);
 }
 
+/* 背景音乐开关：只在配置了音乐的学员页面上出现 */
+.music-toggle {
+  position: absolute;
+  top: calc(16px + env(safe-area-inset-top));
+  right: 16px;
+  z-index: 20;
+  width: 42px;
+  height: 42px;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 50%;
+  background: rgba(10, 16, 32, 0.42);
+  color: #fff;
+  cursor: pointer;
+}
+
+.music-toggle svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 暂停时画一道斜杠 */
+.music-toggle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 2px;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.music-toggle:not(.is-playing)::after {
+  opacity: 1;
+}
+
+.music-toggle.is-playing svg {
+  animation: music-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes music-pulse {
+  0%, 100% { opacity: 0.75; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+
 /* 翻页指示点 */
 .swiper-pagination-bullet {
   background: rgba(255, 255, 255, 0.45);

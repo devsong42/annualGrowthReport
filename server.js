@@ -1,6 +1,8 @@
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const path = require('path');
 const db = require('./db');
 const SQLiteSessionStore = require('./session-store');
 const { AttemptLimiter } = require('./rate-limit');
@@ -34,7 +36,7 @@ app.use(session({
 
 const findStudentForLogin = db.prepare('SELECT student_id, password_hash FROM students WHERE student_id = ?');
 const findReport = db.prepare(`
-  SELECT name, department, join_days, volunteer_hours, activity_count, partner, message
+  SELECT name, department, join_days, volunteer_hours, activity_count, partner, message, bg_dir, bg_music
   FROM students
   WHERE student_id = ?
 `);
@@ -77,12 +79,50 @@ function lockedResponse(res, seconds) {
   res.status(429).json({ error: `错误次数过多，请 ${Math.ceil(seconds / 60)} 分钟后再试` });
 }
 
-const updatePassword = db.prepare('UPDATE students SET password_hash = ? WHERE student_id = ?');
-// 改密码后让其他设备上的会话失效，只保留当前这一个
+const updatePassword = db.prepare('UPDATE students SET password_hash = ? WHERE student_id = ?');// 改密码后让其他设备上的会话失效，只保留当前这一个
 const deleteOtherSessions = db.prepare(`
   DELETE FROM sessions
   WHERE sid != ? AND json_extract(sess, '$.studentId') = ?
 `);
+
+/* ---------- 学员专属的背景图与背景音乐 ---------- */
+// 资源放在宿主机的 static/ 下，compose 以只读方式挂进容器，这里直接看文件在不在
+const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, 'static');
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.ogg', '.wav']);
+
+function listFiles(dir, extensions) {
+  try {
+    return fs.readdirSync(dir)
+      .filter(name => extensions.has(path.extname(name).toLowerCase()))
+      .sort();
+  } catch {
+    return []; // 目录不存在就等于没配资源
+  }
+}
+
+// 用去掉扩展名的文件名作键，页面写 data-bg="01-opening" 即可，扩展名用 jpg/png/webp 都行；
+// 学员自己的目录覆盖共享目录
+function buildBackgroundMap(studentId, bgDir) {
+  const ownDir = bgDir || studentId;
+  const map = {};
+  for (const name of listFiles(path.join(STATIC_DIR, 'images'), IMAGE_EXTENSIONS)) {
+    map[path.parse(name).name] = `/images/${name}`;
+  }
+  for (const name of listFiles(path.join(STATIC_DIR, 'images', ownDir), IMAGE_EXTENSIONS)) {
+    map[path.parse(name).name] = `/images/${encodeURIComponent(ownDir)}/${name}`;
+  }
+  return map;
+}
+
+// 显式指定了文件名就按它找（带不带扩展名都行），否则找与学号同名的音频
+function resolveMusicUrl(studentId, bgMusic) {
+  const files = listFiles(path.join(STATIC_DIR, 'music'), AUDIO_EXTENSIONS);
+  const wanted = bgMusic
+    ? files.find(name => name === bgMusic || path.parse(name).name === bgMusic)
+    : files.find(name => path.parse(name).name === studentId);
+  return wanted ? `/music/${wanted}` : null;
+}
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -167,6 +207,8 @@ app.get('/api/report', (req, res) => {
     activityCount: row.activity_count,
     partner: row.partner,
     message: row.message,
+    backgrounds: buildBackgroundMap(studentId, row.bg_dir),
+    music: resolveMusicUrl(studentId, row.bg_music),
   });
 });
 

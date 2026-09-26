@@ -15,6 +15,8 @@ services:
     volumes:
       - sqlite_data:/app/data
       - ./import:/app/import
+      # 只读挂载静态资源目录，供后端检查学员的背景图/背景音乐文件是否存在
+      - ./static:/app/static:ro
     networks:
       - report-network
     healthcheck:

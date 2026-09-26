@@ -24,8 +24,9 @@ backup/
 # 导入用的 Excel 存放目录（含学员个人信息）
 import/
 
-# 静态资源（背景图体积大，如需版本管理请删除下面两行）
+# 静态资源（背景图与背景音乐体积大，如需版本管理请删除下面三行）
 static/images/
+static/music/
 images/
 
 # 日志

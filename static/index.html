@@ -32,10 +32,20 @@
 
 <!-- 报告页 -->
 <div id="reportScreen" class="screen report" hidden>
+  <button id="musicToggle" class="music-toggle" type="button" aria-label="播放背景音乐" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
+         stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 17V5l10-2v12" />
+      <circle cx="6.5" cy="17.5" r="2.5" />
+      <circle cx="16.5" cy="15.5" r="2.5" />
+    </svg>
+  </button>
+  <audio id="bgm" loop preload="auto"></audio>
+
   <div class="swiper" id="reportSwiper">
     <div class="swiper-wrapper">
 
-      <section class="swiper-slide page page-opening" data-bg="01-opening.jpg">
+      <section class="swiper-slide page page-opening" data-bg="01-opening">
         <div class="page-inner">
           <p class="line" data-animate="fadeInDown">今年，我们一起走过</p>
           <h2 class="huge" data-animate="fadeInUp" data-delay="150ms"><span data-field="name"></span></h2>
@@ -44,7 +54,7 @@
         </div>
       </section>
 
-      <section class="swiper-slide page page-days" data-bg="02-days.jpg">
+      <section class="swiper-slide page page-days" data-bg="02-days">
         <div class="page-inner">
           <p class="line" data-animate="fadeIn">你加入我们已经</p>
           <p class="number" data-animate="zoomIn" data-delay="150ms"><span data-count="joinDays">0</span><small>天</small></p>
@@ -52,7 +62,7 @@
         </div>
       </section>
 
-      <section class="swiper-slide page page-hours" data-bg="03-hours.jpg">
+      <section class="swiper-slide page page-hours" data-bg="03-hours">
         <div class="page-inner">
           <p class="line" data-animate="fadeIn">今年你的志愿服务时长</p>
           <p class="number" data-animate="zoomIn" data-delay="150ms"><span data-count="volunteerHours">0</span><small>小时</small></p>
@@ -60,7 +70,7 @@
         </div>
       </section>
 
-      <section class="swiper-slide page page-activities" data-bg="04-activities.jpg">
+      <section class="swiper-slide page page-activities" data-bg="04-activities">
         <div class="page-inner">
           <p class="line" data-animate="fadeIn">这一年你参加了</p>
           <p class="number" data-animate="zoomIn" data-delay="150ms"><span data-count="activityCount">0</span><small>次</small></p>
@@ -68,7 +78,7 @@
         </div>
       </section>
 
-      <section class="swiper-slide page page-partner" data-bg="05-partner.jpg">
+      <section class="swiper-slide page page-partner" data-bg="05-partner">
         <div class="page-inner">
           <p class="line" data-animate="fadeIn">今年的年度伙伴是</p>
           <h2 class="huge" data-animate="zoomIn" data-delay="150ms"><span data-field="partner"></span></h2>
@@ -76,14 +86,14 @@
         </div>
       </section>
 
-      <section class="swiper-slide page page-message" data-bg="06-message.jpg">
+      <section class="swiper-slide page page-message" data-bg="06-message">
         <div class="page-inner">
           <p class="line" data-animate="fadeIn">部长想对你说</p>
           <p class="message" data-animate="fadeInUp" data-delay="200ms" data-field="message"></p>
         </div>
       </section>
 
-      <section class="swiper-slide page page-ending" data-bg="07-ending.jpg">
+      <section class="swiper-slide page page-ending" data-bg="07-ending">
         <div class="page-inner">
           <p class="line" data-animate="fadeInUp">这一年，谢谢你在</p>
           <h2 class="huge" data-animate="zoomIn" data-delay="200ms"><span data-field="name"></span></h2>
