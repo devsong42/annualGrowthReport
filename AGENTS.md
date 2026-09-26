@@ -124,6 +124,8 @@ CREATE TABLE sessions (
 - 服务间通过自定义 bridge 网络 `report-network` 通信，Nginx 中 `proxy_pass http://app:3000`
 - `app.build.network: host`：容器默认 bridge 网络没有 IPv6 路由，构建期借用宿主机网络（原因见 §11）
 
+**nginx 配置要点**（`nginx/default.conf`）：静态托管 + `/api/` 反代 + `/images/` 不存在时直接 404（不回落到首页）；已启用 gzip（`comp_level 2`、`min_length 1024`，只压文本类，图片与 `/api/` 显式 `gzip off`）—— 文本资源首访从 266KB 降到约 64KB
+
 **常用运维命令**
 
 | 任务 | 命令 |
