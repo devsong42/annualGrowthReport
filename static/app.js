@@ -10,6 +10,16 @@ const loginForm = document.querySelector('#loginForm');
 const loginBtn = document.querySelector('#loginBtn');
 const loginError = document.querySelector('#loginError');
 const logoutBtn = document.querySelector('#logoutBtn');
+const changePasswordBtn = document.querySelector('#changePasswordBtn');
+const passwordScreen = document.querySelector('#passwordScreen');
+const passwordForm = document.querySelector('#passwordForm');
+const passwordBtn = document.querySelector('#passwordBtn');
+const passwordBack = document.querySelector('#passwordBack');
+const passwordError = document.querySelector('#passwordError');
+const passwordOk = document.querySelector('#passwordOk');
+const oldPasswordInput = document.querySelector('#oldPassword');
+const newPasswordInput = document.querySelector('#newPassword');
+const confirmPasswordInput = document.querySelector('#confirmPassword');
 const studentIdInput = document.querySelector('#studentId');
 const passwordInput = document.querySelector('#password');
 
@@ -122,6 +132,7 @@ function hideLoginError() {
 
 function showLogin(message) {
   reportScreen.hidden = true;
+  passwordScreen.hidden = true;
   loginScreen.hidden = false;
   loginBtn.disabled = false;
   loginBtn.textContent = '进入报告';
@@ -135,6 +146,7 @@ function showLogin(message) {
 function enterReport(data) {
   renderReport(data);
   loginScreen.hidden = true;
+  passwordScreen.hidden = true;
   reportScreen.hidden = false;
   hideLoginError();
   loadBackgrounds();
@@ -159,6 +171,46 @@ function enterReport(data) {
       },
     },
   });
+}
+
+/* ---------- 修改密码 ---------- */
+
+function showPasswordError(message) {
+  passwordOk.hidden = true;
+  passwordError.textContent = message;
+  passwordError.hidden = false;
+}
+
+function showPasswordOk(message) {
+  passwordError.hidden = true;
+  passwordOk.textContent = message;
+  passwordOk.hidden = false;
+}
+
+function resetPasswordForm() {
+  oldPasswordInput.value = '';
+  newPasswordInput.value = '';
+  confirmPasswordInput.value = '';
+  passwordError.hidden = true;
+  passwordOk.hidden = true;
+  passwordBtn.disabled = false;
+  passwordBtn.textContent = '保存新密码';
+}
+
+function showChangePassword() {
+  resetPasswordForm();
+  reportScreen.hidden = true;
+  passwordScreen.hidden = false;
+  playAnimations(passwordScreen);
+}
+
+function backToReport() {
+  passwordScreen.hidden = true;
+  reportScreen.hidden = false;
+  if (swiper) {
+    swiper.update();
+    playPage(swiper.slides[swiper.activeIndex]);
+  }
 }
 
 /* ---------- 登录与退出 ---------- */
@@ -197,6 +249,42 @@ logoutBtn.addEventListener('click', async () => {
   }
   logoutBtn.disabled = false;
   showLogin('已退出登录');
+});
+
+changePasswordBtn.addEventListener('click', showChangePassword);
+passwordBack.addEventListener('click', backToReport);
+
+passwordForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  passwordError.hidden = true;
+  passwordOk.hidden = true;
+
+  const oldPassword = oldPasswordInput.value;
+  const newPassword = newPasswordInput.value;
+  const confirmPassword = confirmPasswordInput.value;
+
+  if (!oldPassword || !newPassword || !confirmPassword) return showPasswordError('请把三项都填上');
+  if (newPassword.length < 6 || newPassword.length > 64) return showPasswordError('新密码长度需为 6–64 位');
+  if (newPassword !== confirmPassword) return showPasswordError('两次输入的新密码不一致');
+  if (newPassword === oldPassword) return showPasswordError('新密码不能和当前密码相同');
+
+  passwordBtn.disabled = true;
+  passwordBtn.textContent = '保存中…';
+
+  try {
+    const result = await request('/api/password', { method: 'POST', body: { oldPassword, newPassword } });
+    resetPasswordForm();
+    const extra = result && result.otherSessionsRemoved > 0 ? '，其他设备上的登录已失效' : '';
+    showPasswordOk(`密码修改成功${extra}`);
+  } catch (error) {
+    passwordBtn.disabled = false;
+    passwordBtn.textContent = '保存新密码';
+    if (error.message === '未登录') {
+      showLogin('登录已过期，请重新登录');
+      return;
+    }
+    showPasswordError(error.message);
+  }
 });
 
 /* ---------- 启动 ---------- */

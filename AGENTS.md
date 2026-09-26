@@ -81,6 +81,7 @@ CREATE TABLE sessions (
 | `/api/login` | POST | 校验学号密码，创建 Session |
 | `/api/report` | GET | 返回当前登录学员的报告数据（需 Session） |
 | `/api/logout` | POST | 销毁 Session |
+| `/api/password` | POST | 学员自助改密码：校验当前密码，改完让其他设备的会话失效 |
 | `/api/admin/import` | POST | （可选）管理员上传 Excel 批量导入 |
 
 关键约束：
@@ -96,10 +97,12 @@ CREATE TABLE sessions (
 - 未知 `/api/*` 路径 → `404 {"error":"接口不存在"}`（JSON，不会回落到首页）
 - 登录成功后 `session.regenerate()` 防会话固定攻击；Session 存进 SQLite，重启容器仍有效
 - `/api/report` 返回 camelCase 字段：`name`、`department`、`joinDays`、`volunteerHours`、`activityCount`、`partner`、`message`
+- 防暴力破解：同学号连续失败 5 次锁 10 分钟；同 IP 失败 30 次锁 10 分钟（校园网共用出口，故意放宽）。命中后返回 `429 错误次数过多，请 X 分钟后再试`；计数在进程内存里（`rate-limit.js`），重启容器即清空
+- 改密码接口：要求当前密码正确、新密码 6–64 位且与旧密码不同；成功后删除该学员除当前设备外的所有会话
 
 ## 7. 前端实现要点（已实现，`static/`）
 
-页面：1 个登录页（独立于 Swiper）+ 7 屏报告页（开场 → 加入天数 → 志愿时长 → 活动次数 → 年度伙伴 → 部长寄语 → 结尾）。文件为 `index.html` / `style.css` / `app.js`，第三方库放 `static/vendor/`（Swiper 11.2.10、Animate.css 4.1.1，已本地化，不从 CDN 引）。
+页面：1 个登录页（独立于 Swiper，页面底部提示「初始密码为学号后六位」）+ 7 屏报告页（开场 → 加入天数 → 志愿时长 → 活动次数 → 年度伙伴 → 部长寄语 → 结尾）+ 1 个修改密码页（从结尾页的按钮进入）。文件为 `index.html` / `style.css` / `app.js`，第三方库放 `static/vendor/`（Swiper 11.2.10、Animate.css 4.1.1，已本地化，不从 CDN 引）。
 
 - Swiper 垂直翻页：`direction: 'vertical'`、`speed: 800`（网易云式阻尼感约 700–900）、`mousewheel: true`、`pagination.clickable`，在 `slideChangeTransitionStart` 里触发当前屏动画
 - **没用 `swiper.animate` 插件**（它是 Swiper 3/4 时代产物，与现代版本兼容性没保证），改为自实现：元素写 `data-animate="fadeInUp"`（可加 `data-delay` / `data-duration`），进入该屏时先移除再挂上 `animate__animated animate__<效果>`，配合 `void offsetWidth` 强制重排，实现「再次进入重新播放」
@@ -175,11 +178,11 @@ CREATE TABLE sessions (
 | 改了 nginx 配置 | `docker compose exec nginx nginx -s reload`（配置以目录形式挂载，改完 reload 即生效；若改了挂载本身才需要 `docker compose up -d nginx`） |
 | 重新构建镜像 | `docker compose up -d --build`（构建走宿主机网络，约十几秒） |
 
-**文件对应关系**：`docker-compose.yml`（服务编排）→ `nginx/default.conf`（以目录形式挂载为 `/etc/nginx/conf.d`）→ `static/`（挂载为 `/usr/share/nginx/html`，含登录页与报告页、`vendor/` 本地化前端库、`images/` 背景图目录）→ `server.js`（app 入口）+ `db.js`（建库建表）+ `session-store.js`（会话存储）+ `scripts/import-excel.js`（Excel 导入）。
+**文件对应关系**：`docker-compose.yml`（服务编排）→ `nginx/default.conf`（以目录形式挂载为 `/etc/nginx/conf.d`）→ `static/`（挂载为 `/usr/share/nginx/html`，含登录页与报告页、`vendor/` 本地化前端库、`images/` 背景图目录）→ `server.js`（app 入口）+ `db.js`（建库建表）+ `session-store.js`（会话存储）+ `rate-limit.js`（登录失败限流）+ `scripts/import-excel.js`（Excel 导入）。
 
 ## 12. 后端现状与 Excel 导入
 
-已实现：`db.js`（SQLite 建库建表）、`session-store.js`（better-sqlite3 会话存储）、`server.js`（`/api/health`、`/api/login`、`/api/report`、`/api/logout`）、`scripts/import-excel.js`（导入脚本）。
+已实现：`db.js`（SQLite 建库建表）、`session-store.js`（better-sqlite3 会话存储）、`rate-limit.js`（登录失败限流）、`server.js`（`/api/health`、`/api/login`、`/api/password`、`/api/report`、`/api/logout`）、`scripts/import-excel.js`（导入脚本）。
 
 **导入数据步骤**（每学年维护时执行，均在项目根目录）：
 
@@ -193,12 +196,18 @@ docker compose exec app node scripts/import-excel.js import/学员数据.xlsx
 
 表头（中文，第一行）：`学号、密码、姓名、部门、加入天数、志愿时长、活动次数、年度伙伴、部长寄语`。
 
-导入规则：按学号 upsert（`INSERT ... ON CONFLICT DO UPDATE`）；**密码列留空 = 保留库中已有密码**（适合只改其他字段）；新增学员留空会被跳过并在输出里提示。运行结束会打印「成功 N 条，跳过 M 条」。
+导入规则：按学号 upsert（`INSERT ... ON CONFLICT DO UPDATE`）。密码列的三种情况：
 
-**库内有 2 个测试账号**（2021001 张三、2021002 李四，密码 `init123456`），供前端联调使用。导入真实数据后可清理：
+- 填了值 → 用该值（重新哈希），可用于重置某人的密码
+- 留空且该学员已存在 → 保留库里的原密码（适合只改其他字段）
+- 留空且是新学员 → **用「学号后六位」作初始密码**（如 2021003 → `021003`），导入结束会提示有多少人用了初始密码
+
+运行结束会打印「成功 N 条，跳过 M 条」。
+
+**库内有 3 个测试账号**：2021001 张三、2021002 李四（密码 `init123456`），2021003 王五（密码是学号后六位 `021003`，用于验证「初始密码」链路）。导入真实数据后可清理：
 
 ```bash
-docker compose exec app node -e "const db=require('./db');db.prepare('delete from students where student_id in (?,?)').run('2021001','2021002');console.log(db.prepare('select count(*) c from students').get())"
+docker compose exec app node -e "const db=require('./db');db.prepare('delete from students where student_id in (?,?,?)').run('2021001','2021002','2021003');console.log(db.prepare('select count(*) c from students').get())"
 ```
 
 （`docker compose down -v` 会连数据卷一起清空，慎用。）
@@ -210,5 +219,5 @@ docker compose exec app node -e "const db=require('./db');db.prepare('delete fro
 - 管理后台：已决定先用 `scripts/import-excel.js` 命令行导入（见 §12），网页上传导入等有需要再做
 - 服务器发行版已确认：本机即 Debian 13，Docker 与 Compose 均已装好
 - HTTPS：需要域名解析到公网入口（当前公网入口是 frps，需在 frpc.toml 增加 80/443 的 tcp 代理）
-- 密码策略：初始密码规则如何设定
+- 密码策略已定：初始密码 = 学号后六位（见 §12），登录页有对应提示；如需更复杂的初始密码规则可再调整
 - 背景图：尚未提供，当前用每屏自带渐变占位；放好图后放进 `static/images/` 即可自动生效（文件名约定见 §7）

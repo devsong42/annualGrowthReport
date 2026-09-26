@@ -26,6 +26,7 @@
       <p id="loginError" class="login-error" role="alert" hidden></p>
       <button id="loginBtn" class="login-btn" type="submit">进入报告</button>
     </form>
+    <p class="login-tip">初始密码为学号后六位，登录后可在报告最后一页修改</p>
   </div>
 </section>
 
@@ -87,7 +88,10 @@
           <p class="line" data-animate="fadeInUp">这一年，谢谢你在</p>
           <h2 class="huge" data-animate="zoomIn" data-delay="200ms"><span data-field="name"></span></h2>
           <p class="sub" data-animate="fadeInUp" data-delay="450ms">新的一年，继续一起走吧</p>
-          <button id="logoutBtn" class="logout" data-animate="fadeIn" data-delay="800ms" type="button">退出登录</button>
+          <div class="btn-row" data-animate="fadeIn" data-delay="800ms">
+            <button id="changePasswordBtn" class="btn-ghost" type="button">修改密码</button>
+            <button id="logoutBtn" class="btn-ghost" type="button">退出登录</button>
+          </div>
         </div>
       </section>
 
@@ -95,6 +99,27 @@
     <div class="swiper-pagination"></div>
   </div>
 </div>
+
+<!-- 修改密码页 -->
+<section id="passwordScreen" class="screen login" hidden>
+  <div class="login-inner">
+    <h2 class="login-title" data-animate="fadeInUp">修改密码</h2>
+    <p class="login-desc" data-animate="fadeInUp" data-delay="120ms">改完之后，其他设备上的登录会失效</p>
+
+    <form id="passwordForm" class="login-form" novalidate>
+      <input id="oldPassword" class="field" type="password" autocomplete="current-password"
+             placeholder="当前密码" maxlength="64" required>
+      <input id="newPassword" class="field" type="password" autocomplete="new-password"
+             placeholder="新密码（6-64 位）" maxlength="64" required>
+      <input id="confirmPassword" class="field" type="password" autocomplete="new-password"
+             placeholder="再输一次新密码" maxlength="64" required>
+      <p id="passwordError" class="login-error" role="alert" hidden></p>
+      <p id="passwordOk" class="form-ok" role="status" hidden></p>
+      <button id="passwordBtn" class="login-btn" type="submit">保存新密码</button>
+      <button id="passwordBack" class="btn-ghost" type="button">返回报告</button>
+    </form>
+  </div>
+</section>
 
 <script src="vendor/swiper-bundle.min.js"></script>
 <script src="app.js"></script>

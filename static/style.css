@@ -106,6 +106,19 @@ body {
   text-align: left;
 }
 
+.form-ok {
+  margin: 0;
+  font-size: 14px;
+  color: #86efac;
+  text-align: left;
+}
+
+.login-tip {
+  margin: 22px 0 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
 .login-btn {
   margin-top: 6px;
   padding: 15px 16px;
@@ -270,9 +283,15 @@ body {
   50% { transform: translateY(-6px); opacity: 0.95; }
 }
 
-.logout {
+.btn-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
   margin-top: 34px;
-  padding: 11px 26px;
+}
+
+.btn-ghost {
+  padding: 11px 22px;
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -281,7 +300,7 @@ body {
   cursor: pointer;
 }
 
-.logout:active {
+.btn-ghost:active {
   background: rgba(255, 255, 255, 0.16);
 }
 

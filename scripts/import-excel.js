@@ -36,7 +36,7 @@ function usage() {
   node scripts/import-excel.js --template [路径]   生成空白模板（默认 import/students-template.xlsx）
 
 Excel 首行为表头，列名：${HEADERS.join('、')}
-密码列留空表示保留数据库中已有的密码；新增学员必须填密码。`);
+密码列填了值就用该值；留空时新学员用「学号后六位」作初始密码，已有学员保留数据库里的原密码。`);
 }
 
 function toInt(value) {
@@ -61,7 +61,7 @@ function writeTemplate(target) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   XLSX.writeFile(book, target);
   console.log(`模板已生成：${target}`);
-  console.log('提示：第二行的密码列故意留空，用于演示「保留原密码」；正式使用时请删掉示例行。');
+  console.log('提示：示例行仅供参照，正式使用时请删掉；密码列留空时，新学员用「学号后六位」作初始密码。');
 }
 
 function readRows(file) {
@@ -83,15 +83,22 @@ function toRecord(row) {
 
   const password = text('密码');
   let passwordHash = null;
+  let usedDefaultPassword = false;
   if (password) {
     passwordHash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
   } else {
     const existing = findExisting.get(studentId);
-    if (!existing) return { error: `新增学员 ${studentId} 没有填密码` };
-    passwordHash = existing.password_hash;
+    if (existing) {
+      passwordHash = existing.password_hash;
+    } else {
+      // 初始密码规则：学号后六位
+      passwordHash = bcrypt.hashSync(studentId.slice(-6), BCRYPT_ROUNDS);
+      usedDefaultPassword = true;
+    }
   }
 
   return {
+    usedDefaultPassword,
     value: {
       student_id: studentId,
       name,
@@ -116,21 +123,26 @@ function importFile(file) {
 
   const skipped = [];
   let imported = 0;
+  let defaulted = 0;
 
   const run = db.transaction(() => {
     rows.forEach((row, index) => {
-      const { value, error } = toRecord(row);
+      const { value, error, usedDefaultPassword } = toRecord(row);
       if (error) {
         skipped.push(`第 ${index + 2} 行：${error}`);
         return;
       }
       upsert.run(value);
       imported += 1;
+      if (usedDefaultPassword) defaulted += 1;
     });
   });
   run();
 
   console.log(`导入完成：成功 ${imported} 条，跳过 ${skipped.length} 条`);
+  if (defaulted > 0) {
+    console.log(`其中 ${defaulted} 名新学员使用初始密码（学号后六位），建议提醒他们登录后自行修改`);
+  }
   skipped.forEach(line => console.log(`  - ${line}`));
   console.log(`数据库：${db.name}`);
 }

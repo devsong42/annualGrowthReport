@@ -3,6 +3,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
 const SQLiteSessionStore = require('./session-store');
+const { AttemptLimiter } = require('./rate-limit');
 
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET;
@@ -39,7 +40,49 @@ const findReport = db.prepare(`
 `);
 
 // 学号不存在时也走一次 bcrypt，避免用响应耗时探测学号是否存在
-const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
+const BCRYPT_ROUNDS = 10;
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', BCRYPT_ROUNDS);
+
+/* ---------- 防暴力破解 ---------- */
+// 同学号 5 次失败锁 10 分钟；同 IP 放宽到 30 次，避免校园网共用出口被一个人拖累
+const LOCK_WINDOW_MS = 15 * 60 * 1000;
+const LOCK_MS = 10 * 60 * 1000;
+const studentLimiter = new AttemptLimiter({ maxFailures: 5, windowMs: LOCK_WINDOW_MS, lockMs: LOCK_MS });
+const ipLimiter = new AttemptLimiter({ maxFailures: 30, windowMs: LOCK_WINDOW_MS, lockMs: LOCK_MS });
+
+function lockedSeconds(req, studentId) {
+  const targets = [
+    [studentLimiter, `student:${studentId}`],
+    [ipLimiter, `ip:${req.ip}`],
+  ];
+  let seconds = 0;
+  for (const [limiter, key] of targets) {
+    const retry = limiter.retryAfterSeconds(key);
+    if (retry && retry > seconds) seconds = retry;
+  }
+  return seconds;
+}
+
+function recordFailure(req, studentId) {
+  studentLimiter.fail(`student:${studentId}`);
+  ipLimiter.fail(`ip:${req.ip}`);
+}
+
+function clearFailures(req, studentId) {
+  studentLimiter.succeed(`student:${studentId}`);
+  ipLimiter.succeed(`ip:${req.ip}`);
+}
+
+function lockedResponse(res, seconds) {
+  res.status(429).json({ error: `错误次数过多，请 ${Math.ceil(seconds / 60)} 分钟后再试` });
+}
+
+const updatePassword = db.prepare('UPDATE students SET password_hash = ? WHERE student_id = ?');
+// 改密码后让其他设备上的会话失效，只保留当前这一个
+const deleteOtherSessions = db.prepare(`
+  DELETE FROM sessions
+  WHERE sid != ? AND json_extract(sess, '$.studentId') = ?
+`);
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -55,12 +98,18 @@ app.post('/api/login', async (req, res) => {
     return res.status(400).json({ error: '请填写学号和密码' });
   }
 
-  const student = findStudentForLogin.get(studentId.trim());
+  const id = studentId.trim();
+  const locked = lockedSeconds(req, id);
+  if (locked > 0) return lockedResponse(res, locked);
+
+  const student = findStudentForLogin.get(id);
   const matched = await bcrypt.compare(password, student ? student.password_hash : DUMMY_HASH);
   if (!student || !matched) {
+    recordFailure(req, id);
     return res.status(401).json({ error: '学号或密码错误' });
   }
 
+  clearFailures(req, id);
   req.session.regenerate(err => {
     if (err) return res.status(500).json({ error: '登录失败，请重试' });
     req.session.studentId = student.student_id;
@@ -69,6 +118,38 @@ app.post('/api/login', async (req, res) => {
       res.json({ success: true });
     });
   });
+});
+
+app.post('/api/password', async (req, res) => {
+  const studentId = req.session.studentId;
+  if (!studentId) return res.status(401).json({ error: '未登录' });
+
+  const { oldPassword, newPassword } = req.body || {};
+  if (typeof oldPassword !== 'string' || typeof newPassword !== 'string' || !oldPassword || !newPassword) {
+    return res.status(400).json({ error: '请填写当前密码和新密码' });
+  }
+  if (newPassword.length < 6 || newPassword.length > 64) {
+    return res.status(400).json({ error: '新密码长度需为 6–64 位' });
+  }
+  if (newPassword === oldPassword) {
+    return res.status(400).json({ error: '新密码不能和当前密码相同' });
+  }
+
+  const locked = lockedSeconds(req, studentId);
+  if (locked > 0) return lockedResponse(res, locked);
+
+  const student = findStudentForLogin.get(studentId);
+  const matched = student ? await bcrypt.compare(oldPassword, student.password_hash) : false;
+  if (!matched) {
+    recordFailure(req, studentId);
+    return res.status(401).json({ error: '当前密码不正确' });
+  }
+
+  updatePassword.run(bcrypt.hashSync(newPassword, BCRYPT_ROUNDS), studentId);
+  const otherSessionsRemoved = deleteOtherSessions.run(req.sessionID, studentId).changes;
+  clearFailures(req, studentId);
+
+  res.json({ success: true, otherSessionsRemoved });
 });
 
 app.get('/api/report', (req, res) => {
