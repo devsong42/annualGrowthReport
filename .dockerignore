@@ -2,9 +2,12 @@ node_modules
 .git
 .gitignore
 data
+import
+templates
 static
 certbot
 nginx
+.qoder
 *.md
 .env
 .env.*

@@ -21,6 +21,9 @@ backup/
 *.csv
 !templates/*.xlsx
 
+# 导入用的 Excel 存放目录（含学员个人信息）
+import/
+
 # 静态资源（背景图体积大，如需版本管理请删除下面两行）
 static/images/
 images/
@@ -32,5 +35,6 @@ logs/
 # 编辑器与系统文件
 .vscode/
 .idea/
+.qoder/
 .DS_Store
 Thumbs.db

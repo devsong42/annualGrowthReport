@@ -1,6 +1,9 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      # 容器默认 bridge 网络没有 IPv6 路由，而镜像源会返回 AAAA 记录导致 npm 卡住，构建期借用宿主机网络
+      network: host
     image: annual-report-app:latest
     container_name: report-app
     restart: unless-stopped
@@ -11,6 +14,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?请在 .env 中设置 SESSION_SECRET}
     volumes:
       - sqlite_data:/app/data
+      - ./import:/app/import
     networks:
       - report-network
     healthcheck:

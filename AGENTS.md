@@ -43,6 +43,7 @@
 | 前端 | Swiper.js + Animate.css（+ SheetJS 仅用于导入时解析） | 交互方案保持不变 |
 | 后端 | Node.js + Express | 与前端同语言，零基础友好 |
 | 数据库 | SQLite（`better-sqlite3`） | 零配置、单文件、几百人规模足够 |
+| Excel 解析 | SheetJS（`xlsx` 0.20.3） | 仅服务端导入脚本使用；npm 上的 0.18.5 有原型污染漏洞，官方 CDN 版已随仓库放在 `vendor/` |
 | Session | `express-session` + 自写 better-sqlite3 Store | Session 落库、重启不丢失；不用 `connect-sqlite3`，它依赖 `sqlite3` 原生模块，其预编译包在本机网络下拉不到 |
 | 密码 | `bcryptjs` 哈希 | 纯 JS 实现，无需编译，不存明文 |
 | 反向代理 | Nginx | HTTPS、静态文件、转发 `/api` |
@@ -88,6 +89,14 @@ CREATE TABLE sessions (
 - 前端所有请求带 `credentials: 'include'` 以携带 HttpOnly Cookie
 - Excel 导入路径：SheetJS 解析 → bcrypt 哈希密码 → `INSERT OR REPLACE` 写库，从而保留「只维护一个 Excel」的习惯
 
+已实现的行为约定（`server.js`）：
+
+- 未登录访问受保护接口 → `401 {"error":"未登录"}`
+- 登录失败统一 `401 {"error":"学号或密码错误"}`，不区分「学号不存在」与「密码错误」；参数缺失 → `400`
+- 未知 `/api/*` 路径 → `404 {"error":"接口不存在"}`（JSON，不会回落到首页）
+- 登录成功后 `session.regenerate()` 防会话固定攻击；Session 存进 SQLite，重启容器仍有效
+- `/api/report` 返回 camelCase 字段：`name`、`department`、`joinDays`、`volunteerHours`、`activityCount`、`partner`、`message`
+
 ## 7. 前端实现要点
 
 - Swiper 垂直翻页配置：`direction: 'vertical'`、`speed: 800`（网易云式阻尼感约 700–900）、`mousewheel: true`、`pagination.clickable`
@@ -103,10 +112,10 @@ CREATE TABLE sessions (
 
 **docker-compose 要点**：
 
-- `app` 服务不映射端口到宿主机，仅由 Nginx 经内部网络转发（更安全）
-- `nginx` 服务映射 `80:80`、`443:443`，挂载 `./nginx.conf` 与 `./static`（`ro`），`depends_on: app`
-- 数据持久化：`sqlite_data` 卷挂载到 `/app/data`，`DB_PATH=/app/data/report.db`
+- `app` 服务不映射端口到宿主机，仅由 Nginx 经内部网络转发（更安全）；数据库卷 `sqlite_data` → `/app/data`（`DB_PATH=/app/data/report.db`），`./import` → `/app/import` 供导入脚本读取 Excel
+- `nginx` 服务映射 `${HTTP_PORT}:80`，挂载 `nginx/default.conf` 与 `./static`（`ro`），`depends_on` app 的健康检查
 - 服务间通过自定义 bridge 网络 `report-network` 通信，Nginx 中 `proxy_pass http://app:3000`
+- `app.build.network: host`：容器默认 bridge 网络没有 IPv6 路由，构建期借用宿主机网络（原因见 §11）
 
 **常用运维命令**
 
@@ -119,26 +128,26 @@ CREATE TABLE sessions (
 
 ## 9. 开发路径（约 3–4 周）
 
-1. **服务器初始化**（1–2 天）：安装 Docker（官方仓库方式）、开放 22/80/443
-2. **后端 API**（3–5 天）：建库建表、登录/报告/登出接口、Excel 导入脚本
-3. **前端对接 API**（2–3 天）：登录改调 `/api/login`，报告数据改取 `/api/report`（Swiper 与动画代码不用改）
-4. **部署与 HTTPS**（1–2 天）：Nginx 反代、Certbot 证书
-5. **测试与交付**（2–3 天）
+1. ~~**服务器初始化**~~（已完成）：Docker 与 Compose 就位，系统 nginx 已停用，对外 80 端口由 `report-nginx` 接管
+2. ~~**后端 API**~~（已完成）：建库建表、登录/报告/登出接口、Excel 导入脚本，详见 §12
+3. **前端对接 API**（下一步）：登录调 `/api/login`，报告数据取 `/api/report`（Swiper 与动画代码不用改）
+4. **部署与 HTTPS**：Nginx 反代已就位，待域名与 Certbot 证书
+5. **测试与交付**
 
 **测试清单**：错误学号/密码有提示；未登录访问 `/api/report` 被拒；Session 过期跳回登录页；手机端滑动与动画正常；导入 Excel 后数据正确更新；HTTPS 无浏览器安全警告。
 
 ## 10. 每学年维护流程
 
-1. 本地准备新 Excel（含全部字段与初始密码）
-2. 上传导入：SheetJS 解析 → bcrypt 哈希 → `INSERT OR REPLACE`
-3. 替换背景图（放在静态目录），必要时更新页面文案配置
+1. 本地准备新 Excel（含全部字段与初始密码），或先用 `--template` 生成模板
+2. 放进 `import/` 目录后执行 `docker compose exec app node scripts/import-excel.js import/你的文件.xlsx`（SheetJS 解析 → bcrypt 哈希 → 按学号 upsert）
+3. 替换背景图（放在 `static/`），必要时更新页面文案配置
 4. 前端代码与后端代码均无需改动
 
 ## 11. 本机部署现状（实测记录）
 
-**运行环境**：Debian 13，Docker 29.7.2 + Compose v5.5.0（当前用户在 docker 组，`sudo` 需要密码）。系统 nginx 已安装且在 80 端口跑默认站点；另有 frpc 内网穿透容器（目前只映射了 terraria 的 7777）。内网地址 `10.129.246.40`。
+**运行环境**：Debian 13，Docker 29.7.2 + Compose v5.5.0（当前用户在 docker 组，`sudo` 需要密码）。系统 nginx 曾占用 80 端口提供默认站点，已 `stop` + `disable`；另有 frpc 内网穿透容器（只映射了 terraria 的 7777）。内网地址 `10.129.246.40`。
 
-**当前形态**：compose 编排 `report-app`（Node 24，容器内 3000，不对外映射端口）+ `report-nginx`（映射 `${HTTP_PORT}:80`）。由于系统 nginx 占着 80，`.env` 暂设 `HTTP_PORT=8080`，内网访问 `http://10.129.246.40:8080`；停用系统 nginx 后改成 80 即可。
+**当前形态**：compose 编排 `report-app`（Node 24，容器内 3000，不对外映射端口）+ `report-nginx`（映射 `${HTTP_PORT}:80`）。`.env` 已设 `HTTP_PORT=80`，站点地址 `http://10.129.246.40/`。
 
 **实测确认的限制与结论**：
 
@@ -146,6 +155,9 @@ CREATE TABLE sessions (
 - npm 走 `registry.npmmirror.com`，`package-lock.json` 里的 `resolved` 已是镜像地址。
 - better-sqlite3 v13 的 npm 包自带 `prebuilds/linuxmusl-x64.node` 等各平台预编译二进制，**无需 python3/make/g++ 编译**；Dockerfile 中 `npm ci` 加 `--ignore-scripts`（npm 11 默认也会拦截依赖的 install 脚本）。构建耗时约 10 秒，带编译工具链的方案则要 5 分钟以上。
 - 未登录状态访问 `/api/xxx` 会由 Express 返回 404，不会回落到 `index.html`（`try_files` 只作用于非 `/api/` 路径）。
+- 容器默认 bridge 网络**没有 IPv6 路由**，而镜像源会返回 AAAA 记录 → 容器内 `npm ci`、下载文件会长时间卡死挂起（宿主机网络正常，同一地址 0.2 秒返回）。解决：compose 里 `app.build.network: host`，仅影响构建期；运行期的 app 不需要外网。
+- SheetJS 官方 CDN 在宿主机 0.8 秒下完（2.4MB），在容器里却卡住 → 已把 `xlsx-0.20.3.tgz` 放进 `vendor/` 并用 `file:` 依赖，构建不再依赖外部 CDN。
+- **frpc 隧道当前不通**：日志为 `dial tcp 140.143.226.163:7000: i/o timeout`，容器在反复重启，公网入口不可用。与本项目无关，但会影响后续对外访问与 HTTPS 申请。
 
 **常用命令**（项目根目录执行）：
 
@@ -157,13 +169,39 @@ CREATE TABLE sessions (
 | 停止（保留数据） | `docker compose down` |
 | 只改前端静态文件 | 直接改 `static/` 内容，无需重启容器 |
 
-**文件对应关系**：`docker-compose.yml`（服务编排）→ `nginx/default.conf`（挂载为 `/etc/nginx/conf.d/default.conf`）→ `static/`（挂载为 `/usr/share/nginx/html`，当前只有部署自检占位页）→ `server.js`（app 容器入口，当前仅 `/api/health`）。
+**文件对应关系**：`docker-compose.yml`（服务编排）→ `nginx/default.conf`（挂载为 `/etc/nginx/conf.d/default.conf`）→ `static/`（挂载为 `/usr/share/nginx/html`，当前只有部署自检占位页）→ `server.js`（app 入口）+ `db.js`（建库建表）+ `session-store.js`（会话存储）+ `scripts/import-excel.js`（Excel 导入）。
 
-## 12. 待确认事项
+## 12. 后端现状与 Excel 导入
+
+已实现：`db.js`（SQLite 建库建表）、`session-store.js`（better-sqlite3 会话存储）、`server.js`（`/api/health`、`/api/login`、`/api/report`、`/api/logout`）、`scripts/import-excel.js`（导入脚本）。
+
+**导入数据步骤**（每学年维护时执行，均在项目根目录）：
+
+```bash
+# 1. 生成模板 → import/students-template.xlsx
+docker compose exec app node scripts/import-excel.js --template
+
+# 2. 按模板填好数据放进 import/ 目录，再导入
+docker compose exec app node scripts/import-excel.js import/学员数据.xlsx
+```
+
+表头（中文，第一行）：`学号、密码、姓名、部门、加入天数、志愿时长、活动次数、年度伙伴、部长寄语`。
+
+导入规则：按学号 upsert（`INSERT ... ON CONFLICT DO UPDATE`）；**密码列留空 = 保留库中已有密码**（适合只改其他字段）；新增学员留空会被跳过并在输出里提示。运行结束会打印「成功 N 条，跳过 M 条」。
+
+**库内有 2 个测试账号**（2021001 张三、2021002 李四，密码 `init123456`），供前端联调使用。导入真实数据后可清理：
+
+```bash
+docker compose exec app node -e "const db=require('./db');db.prepare('delete from students where student_id in (?,?)').run('2021001','2021002');console.log(db.prepare('select count(*) c from students').get())"
+```
+
+（`docker compose down -v` 会连数据卷一起清空，慎用。）
+
+## 13. 待确认事项
 
 - 域名与 HTTPS 证书是否已备好
 - 学员规模（决定 SQLite 是否长期够用）
-- 是否需要管理后台，还是先用命令行导入脚本
+- 管理后台：已决定先用 `scripts/import-excel.js` 命令行导入（见 §12），网页上传导入等有需要再做
 - 服务器发行版已确认：本机即 Debian 13，Docker 与 Compose 均已装好
 - HTTPS：需要域名解析到公网入口（当前公网入口是 frps，需在 frpc.toml 增加 80/443 的 tcp 代理）
 - 密码策略：初始密码规则如何设定
