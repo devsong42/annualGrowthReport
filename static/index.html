@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>部署自检 · 年度成长报告</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 32px 20px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.7;
+    }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    p { color: #94a3b8; font-size: 14px; margin: 0 0 20px; }
+    pre {
+      background: #1e293b;
+      border-left: 3px solid #38bdf8;
+      border-radius: 6px;
+      padding: 16px;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 0;
+    }
+    .ok { border-left-color: #4ade80; }
+    .fail { border-left-color: #f87171; }
+  </style>
+</head>
+<body>
+  <h1>部署自检</h1>
+  <p>占位页，用于确认 Nginx 静态托管与 <code>/api</code> 反向代理均正常；年度报告页面完成后会被替换。</p>
+  <pre id="out">正在检测后端接口…</pre>
+  <script>
+    const out = document.getElementById('out');
+    fetch('/api/health')
+      .then(r => r.json())
+      .then(d => {
+        out.className = 'ok';
+        out.textContent = '静态页面与 API 反代均正常\n' + JSON.stringify(d, null, 2);
+      })
+      .catch(e => {
+        out.className = 'fail';
+        out.textContent = '静态页面正常，但 /api/health 请求失败：' + e.message;
+      });
+  </script>
+</body>
+</html>

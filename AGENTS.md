@@ -43,7 +43,7 @@
 | 前端 | Swiper.js + Animate.css（+ SheetJS 仅用于导入时解析） | 交互方案保持不变 |
 | 后端 | Node.js + Express | 与前端同语言，零基础友好 |
 | 数据库 | SQLite（`better-sqlite3`） | 零配置、单文件、几百人规模足够 |
-| Session | `express-session` + `connect-sqlite3` | Session 落库，重启不丢失 |
+| Session | `express-session` + 自写 better-sqlite3 Store | Session 落库、重启不丢失；不用 `connect-sqlite3`，它依赖 `sqlite3` 原生模块，其预编译包在本机网络下拉不到 |
 | 密码 | `bcryptjs` 哈希 | 纯 JS 实现，无需编译，不存明文 |
 | 反向代理 | Nginx | HTTPS、静态文件、转发 `/api` |
 | 容器编排 | Docker + docker-compose | 环境一致、隔离、一条命令部署 |
@@ -99,7 +99,7 @@ CREATE TABLE sessions (
 
 ## 8. 部署与运维
 
-**Dockerfile 要点**：`node:20-alpine` 基础镜像 → `WORKDIR /app` → 先 `COPY package*.json` 再 `RUN npm install --production`（利用缓存层）→ `COPY . .` → `EXPOSE 3000` → `CMD ["node", "server.js"]`
+**Dockerfile 要点**：`node:24-alpine`（Node 20 已 EOL，且 better-sqlite3 13 要求 Node ≥ 22）→ 多阶段构建：builder 阶段 `npm ci --omit=dev --ignore-scripts`，运行阶段只拷贝 `node_modules` 与代码 → `EXPOSE 3000` → `CMD ["node", "server.js"]`
 
 **docker-compose 要点**：
 
@@ -134,10 +134,36 @@ CREATE TABLE sessions (
 3. 替换背景图（放在静态目录），必要时更新页面文案配置
 4. 前端代码与后端代码均无需改动
 
-## 11. 待确认事项
+## 11. 本机部署现状（实测记录）
+
+**运行环境**：Debian 13，Docker 29.7.2 + Compose v5.5.0（当前用户在 docker 组，`sudo` 需要密码）。系统 nginx 已安装且在 80 端口跑默认站点；另有 frpc 内网穿透容器（目前只映射了 terraria 的 7777）。内网地址 `10.129.246.40`。
+
+**当前形态**：compose 编排 `report-app`（Node 24，容器内 3000，不对外映射端口）+ `report-nginx`（映射 `${HTTP_PORT}:80`）。由于系统 nginx 占着 80，`.env` 暂设 `HTTP_PORT=8080`，内网访问 `http://10.129.246.40:8080`；停用系统 nginx 后改成 80 即可。
+
+**实测确认的限制与结论**：
+
+- Docker Hub 直连不可达（`registry-1.docker.io` 超时），`docker.m.daocloud.io`、`docker.1ms.run` 可用。拉镜像时 `docker pull docker.m.daocloud.io/library/<image>` 再 `docker tag` 回标准名，compose 里保持标准镜像名保证可移植。
+- npm 走 `registry.npmmirror.com`，`package-lock.json` 里的 `resolved` 已是镜像地址。
+- better-sqlite3 v13 的 npm 包自带 `prebuilds/linuxmusl-x64.node` 等各平台预编译二进制，**无需 python3/make/g++ 编译**；Dockerfile 中 `npm ci` 加 `--ignore-scripts`（npm 11 默认也会拦截依赖的 install 脚本）。构建耗时约 10 秒，带编译工具链的方案则要 5 分钟以上。
+- 未登录状态访问 `/api/xxx` 会由 Express 返回 404，不会回落到 `index.html`（`try_files` 只作用于非 `/api/` 路径）。
+
+**常用命令**（项目根目录执行）：
+
+| 任务 | 命令 |
+|---|---|
+| 构建并启动 | `docker compose up -d --build` |
+| 查看状态 | `docker compose ps` |
+| 应用日志 | `docker compose logs -f app` |
+| 停止（保留数据） | `docker compose down` |
+| 只改前端静态文件 | 直接改 `static/` 内容，无需重启容器 |
+
+**文件对应关系**：`docker-compose.yml`（服务编排）→ `nginx/default.conf`（挂载为 `/etc/nginx/conf.d/default.conf`）→ `static/`（挂载为 `/usr/share/nginx/html`，当前只有部署自检占位页）→ `server.js`（app 容器入口，当前仅 `/api/health`）。
+
+## 12. 待确认事项
 
 - 域名与 HTTPS 证书是否已备好
 - 学员规模（决定 SQLite 是否长期够用）
 - 是否需要管理后台，还是先用命令行导入脚本
-- 服务器发行版：安装 Docker 的命令按 Ubuntu 编写，若为 Debian 需调整仓库地址（当前环境为 Debian 13）
+- 服务器发行版已确认：本机即 Debian 13，Docker 与 Compose 均已装好
+- HTTPS：需要域名解析到公网入口（当前公网入口是 frps，需在 frpc.toml 增加 80/443 的 tcp 代理）
 - 密码策略：初始密码规则如何设定
