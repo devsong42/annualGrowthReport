@@ -88,39 +88,53 @@ const deleteOtherSessions = db.prepare(`
 /* ---------- 学员专属的背景图与背景音乐 ---------- */
 // 资源放在宿主机的 static/ 下，compose 以只读方式挂进容器，这里直接看文件在不在
 const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, 'static');
-const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
-const AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.ogg', '.wav']);
+// 数组顺序即优先级：同一个名字有多个格式时取排在前面的
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+const AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.ogg', '.wav'];
 
 function listFiles(dir, extensions) {
   try {
     return fs.readdirSync(dir)
-      .filter(name => extensions.has(path.extname(name).toLowerCase()))
-      .sort();
+      .filter(name => extensions.includes(path.extname(name).toLowerCase()))
+      .sort((a, b) => {
+        const priority = extensions.indexOf(path.extname(a).toLowerCase()) - extensions.indexOf(path.extname(b).toLowerCase());
+        return priority !== 0 ? priority : a.localeCompare(b);
+      });
   } catch {
     return []; // 目录不存在就等于没配资源
   }
+}
+
+// 同一个基名下只保留优先级最高的那个文件
+function byBasename(files) {
+  const map = new Map();
+  for (const name of files) {
+    const base = path.parse(name).name;
+    if (!map.has(base)) map.set(base, name);
+  }
+  return map;
 }
 
 // 用去掉扩展名的文件名作键，页面写 data-bg="01-opening" 即可，扩展名用 jpg/png/webp 都行；
 // 学员自己的目录覆盖共享目录
 function buildBackgroundMap(studentId, bgDir) {
   const ownDir = bgDir || studentId;
-  const map = {};
-  for (const name of listFiles(path.join(STATIC_DIR, 'images'), IMAGE_EXTENSIONS)) {
-    map[path.parse(name).name] = `/images/${name}`;
+  const result = {};
+  for (const name of byBasename(listFiles(path.join(STATIC_DIR, 'images'), IMAGE_EXTENSIONS)).values()) {
+    result[path.parse(name).name] = `/images/${name}`;
   }
-  for (const name of listFiles(path.join(STATIC_DIR, 'images', ownDir), IMAGE_EXTENSIONS)) {
-    map[path.parse(name).name] = `/images/${encodeURIComponent(ownDir)}/${name}`;
+  for (const name of byBasename(listFiles(path.join(STATIC_DIR, 'images', ownDir), IMAGE_EXTENSIONS)).values()) {
+    result[path.parse(name).name] = `/images/${encodeURIComponent(ownDir)}/${name}`;
   }
-  return map;
+  return result;
 }
 
-// 显式指定了文件名就按它找（带不带扩展名都行），否则找与学号同名的音频
+// 显式写了文件名就按它找（写全名优先，只写基名则按格式优先级），否则找与学号同名的音频
 function resolveMusicUrl(studentId, bgMusic) {
   const files = listFiles(path.join(STATIC_DIR, 'music'), AUDIO_EXTENSIONS);
   const wanted = bgMusic
-    ? files.find(name => name === bgMusic || path.parse(name).name === bgMusic)
-    : files.find(name => path.parse(name).name === studentId);
+    ? (files.includes(bgMusic) ? bgMusic : byBasename(files).get(bgMusic))
+    : byBasename(files).get(studentId);
   return wanted ? `/music/${wanted}` : null;
 }
 

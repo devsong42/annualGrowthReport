@@ -111,12 +111,12 @@ CREATE TABLE sessions (
 - 数据填充：标 `data-field="字段名"`，用 `textContent` 写入（不用 innerHTML，避免 XSS）；寄语用 `white-space: pre-wrap` 保留换行
 - 背景图：每屏写 `data-bg="01-opening"`（不带扩展名），JS 用后端返回的 `backgrounds` 映射直接设置；没配图的页面保留页面自带的深色渐变，有图时自动加 45% 暗层保证文字可读
   - 查找顺序：`static/images/<背景图目录>/`（目录留空时用学号）优先，其次共享的 `static/images/`
-  - 约定的键名：`01-opening`、`02-days`、`03-hours`、`04-activities`、`05-partner`、`06-message`、`07-ending`；扩展名不限（jpg/jpeg/png/webp）
+  - 约定的键名：`01-opening`、`02-days`、`03-hours`、`04-activities`、`05-partner`、`06-message`、`07-ending`；扩展名不限（jpg/jpeg/png/webp），同名有多个格式时按 **jpg → jpeg → png → webp** 取第一个
   - 建议 750×1334 或 1080×1920，单图压到 200KB 以内、7 张总量 2MB 以内；`static/images/`、`static/music/` 都不入库
 - 背景音乐：后端返回 `music` URL 时，报告页右上角出现圆形开关按钮（播放态有呼吸动画，暂停态画一道斜杠）
   - 登录后自动尝试播放；被浏览器自动播放策略拦下时按钮显示为暂停态，等用户点一下
   - 开关选择记在 `localStorage`（键 `report.bgm`），主动关过就不再自动响；退出登录会停止播放
-  - 文件查找：优先 Excel 的「背景音乐」列（带不带扩展名都行），留空时找与学号同名的音频（mp3/m4a/ogg/wav）
+  - 文件查找：优先 Excel 的「背景音乐」列（写全名最优先，只写基名则按格式优先级），留空时找与学号同名的音频；支持的格式按 **mp3 → m4a → ogg → wav** 排序取第一个
 - Session 过期或未登录时 `/api/report` 返回 401，前端自动停在登录页；登录失败/网络异常都在表单里显示提示，不用 alert
 
 ## 8. 部署与运维
@@ -215,7 +215,7 @@ docker compose exec app node scripts/import-excel.js import/学员数据.xlsx
 **学员专属的背景图与背景音乐**（都以 Excel 为准，重新导入时留空即回到默认）：
 
 - 「背景图目录」留空 → 自动用 `static/images/<学号>/`；填了值就用 `static/images/<该值>/`
-- 「背景音乐」留空 → 自动找 `static/music/<学号>.mp3`（或 .m4a/.ogg/.wav）；填了值就用文件里已存在的那个（可多人共用同一首）
+- 「背景音乐」留空 → 自动找 `static/music/<学号>.mp3`（或 .m4a/.ogg/.wav，优先级见 §7）；填了值就用文件里已存在的那个（可多人共用同一首）
 - 文件只需丢进对应目录，**不用改代码、也不用重启容器**：后端每次请求实时查文件
 
 **库内有 3 个测试账号**：2021001 张三、2021002 李四（密码 `init123456`），2021003 王五（密码是学号后六位 `021003`，用于验证「初始密码」链路）。导入真实数据后可清理：
