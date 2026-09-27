@@ -341,6 +341,54 @@ audio { width: 100%; margin-top: 4px; }
 .dialog .toolbar { margin: 0; justify-content: flex-end; }
 .dialog .toolbar button { min-width: 92px; }
 
+/* ---------- 轻提示：成功/信息类反馈，右下角自动消失 ---------- */
+
+.toast-box {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  max-width: min(420px, calc(100vw - 32px));
+  pointer-events: none; /* 容器不吃点击，单个提示自己恢复 */
+}
+
+.toast {
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: rgba(16, 22, 40, 0.97);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-line;
+  word-break: break-word;
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+
+.toast.is-visible { opacity: 1; transform: none; }
+.toast.ok { border-left-color: var(--ok); }
+.toast.warn { border-left-color: var(--warn); }
+.toast.error { border-left-color: var(--danger); }
+
+@media (max-width: 640px) {
+  .toast-box {
+    right: 10px;
+    left: 10px;
+    bottom: 10px;
+    max-width: none;
+    justify-items: stretch;
+  }
+}
+
 @media (max-width: 640px) {
   main { padding: 12px 12px 60px; }
   .row-actions { display: grid; grid-template-columns: repeat(2, 1fr); }

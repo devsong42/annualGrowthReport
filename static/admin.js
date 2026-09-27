@@ -102,6 +102,27 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !$('#dialogOverlay').hidden) settleDialog(false);
 });
 
+/* ---------- 轻提示：成功/信息类反馈，右下角自动消失（错误与确认仍走对话框） ---------- */
+
+function toast(message, options = {}) {
+  const { type = 'ok', duration = 4500 } = options;
+  const box = $('#toastBox');
+  const node = el('div', `toast ${type}`, message);
+  box.append(node);
+  requestAnimationFrame(() => node.classList.add('is-visible'));
+
+  const dismiss = () => {
+    node.classList.remove('is-visible');
+    setTimeout(() => node.remove(), 220);
+  };
+  const timer = setTimeout(dismiss, duration);
+  node.addEventListener('click', () => { // 点一下提前关掉
+    clearTimeout(timer);
+    dismiss();
+  });
+  return node;
+}
+
 async function request(path, options = {}) {
   const { method = 'GET', body, raw = false, headers = {} } = options;
   const response = await fetchWithRetry(`${API}${path}`, {
@@ -344,7 +365,7 @@ $('#batchForm').addEventListener('submit', async (event) => {
     clearSelection();
     await loadStudents();
     await loadMedia();
-    await alertDialog(`已更新 ${result.updated} 位成员`
+    toast(`已更新 ${result.updated} 位成员`
       + (result.unchanged ? `，${result.unchanged} 位无变化` : '')
       + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
   } catch (error) {
@@ -363,7 +384,7 @@ $('#batchResetBtn').addEventListener('click', async () => {
     const result = await request('/students/batch', { method: 'POST', body: { studentIds: ids, resetPasswordToDefault: true } });
     clearSelection();
     await loadStudents();
-    await alertDialog(`已重置 ${result.passwordReset} 位成员的密码`
+    toast(`已重置 ${result.passwordReset} 位成员的密码`
       + (result.otherSessionsRemoved ? `，注销了 ${result.otherSessionsRemoved} 个登录会话` : ''));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
@@ -380,7 +401,7 @@ $('#batchDeleteBtn').addEventListener('click', async () => {
     clearSelection();
     await loadStudents();
     await loadMedia();
-    await alertDialog(`已删除 ${result.deleted} 位成员`
+    toast(`已删除 ${result.deleted} 位成员`
       + (result.sessionsRemoved ? `，注销 ${result.sessionsRemoved} 个登录会话` : '')
       + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
   } catch (error) {
@@ -496,17 +517,17 @@ $('#editorForm').addEventListener('submit', async (event) => {
       await loadStudents();
       await loadMedia();
       if (result.changed.length === 0 && result.otherSessionsRemoved === 0) {
-        await alertDialog('没有任何改动');
+        toast('没有任何改动', { type: 'info' });
       } else {
         const extra = result.otherSessionsRemoved > 0 ? `，并让该学员 ${result.otherSessionsRemoved} 个设备下线` : '';
-        await alertDialog(`已保存：${result.changed.join('、') || '无字段变化'}${extra}`);
+        toast(`已保存：${result.changed.join('、') || '无字段变化'}${extra}`);
       }
     } else {
       const result = await request('/students', { method: 'POST', body: payload });
       closeEditor();
       await loadStudents();
       await loadMedia();
-      await alertDialog(result.usedDefaultPassword ? '已新增，初始密码为学号后六位' : '已新增');
+      toast(result.usedDefaultPassword ? '已新增，初始密码为学号后六位' : '已新增');
     }
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
@@ -530,7 +551,7 @@ async function removeStudent(item) {
     const result = await request(`/students/${encodeURIComponent(item.studentId)}`, { method: 'DELETE' });
     await loadStudents();
     await loadMedia();
-    await alertDialog(`已删除${result.sessionsRemoved > 0 ? `，并注销其 ${result.sessionsRemoved} 个登录会话` : ''}`);
+    toast(`已删除${result.sessionsRemoved > 0 ? `，并注销其 ${result.sessionsRemoved} 个登录会话` : ''}`);
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     showError(error);
@@ -662,7 +683,7 @@ $('#mediaBatchForm').addEventListener('submit', async (event) => {
       clearSelection();
       await loadStudents();
       await loadMedia();
-      await alertDialog(`已更新 ${result.updated} 位成员`
+      toast(`已更新 ${result.updated} 位成员`
         + (result.unchanged ? `，${result.unchanged} 位无变化` : '')
         + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
       return;
@@ -845,7 +866,7 @@ async function uploadImage(file, dir, key, overwrite) {
     const result = await upload({ kind: 'image', dir, name, file, overwrite });
     await loadMedia();
     if (result.shadows && result.shadows.length > 0) {
-      await alertDialog(`已上传，但同名的 ${result.shadows.join('、')} 优先级更高，这张图不会生效。\n需要的话请把那个文件删掉。`);
+      toast(`已上传，但同名的 ${result.shadows.join('、')} 优先级更高，这张图不会生效。\n点这条提示可关闭，需要的话请把那个文件删掉。`, { type: 'warn', duration: 7000 });
     }
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
@@ -931,7 +952,7 @@ async function assignMusic(student, name, disable = false) {
     });
     await loadStudents();
     await loadMedia();
-    await alertDialog(disable ? '已取消该学员的音乐' : (name ? `已把 ${name} 指定给 ${student.name}` : '已恢复默认规则'));
+    toast(disable ? '已取消该学员的音乐' : (name ? `已把 ${name} 指定给 ${student.name}` : '已恢复默认规则'));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     showError(error);
@@ -968,7 +989,7 @@ $('#uploadMusicBtn').addEventListener('click', async () => {
     input.value = '';
     $('#musicFileName').textContent = '';
     await loadMedia();
-    await alertDialog(`已上传 ${result.file ? result.file.name : name}`);
+    toast(`已上传 ${result.file ? result.file.name : name}`);
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     if (error.status === 409) {
@@ -978,7 +999,7 @@ $('#uploadMusicBtn').addEventListener('click', async () => {
         input.value = '';
         $('#musicFileName').textContent = '';
         await loadMedia();
-        await alertDialog('已覆盖');
+        toast('已覆盖');
       } catch (err) {
         showError(err);
       }
@@ -1206,7 +1227,7 @@ $('#commitTextBtn').addEventListener('click', async () => {
     $('#commitTextBtn').disabled = true;
     await loadStudents();
     await loadMedia();
-    await alertDialog(`导入完成：写入 ${result.imported} 条，无变化 ${result.unchanged} 条，跳过 ${result.skipped.length} 条`
+    toast(`导入完成：写入 ${result.imported} 条，无变化 ${result.unchanged} 条，跳过 ${result.skipped.length} 条`
       + (result.defaulted ? `，其中 ${result.defaulted} 人使用初始密码` : ''));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
@@ -1254,7 +1275,7 @@ $('#commitExcelBtn').addEventListener('click', async () => {
     $('#commitExcelBtn').disabled = true;
     await loadStudents();
     await loadMedia();
-    await alertDialog(`导入完成：写入 ${result.imported} 条，无变化 ${result.unchanged} 条，跳过 ${result.skipped.length} 条`
+    toast(`导入完成：写入 ${result.imported} 条，无变化 ${result.unchanged} 条，跳过 ${result.skipped.length} 条`
       + (result.defaulted ? `，其中 ${result.defaulted} 人使用初始密码` : ''));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
