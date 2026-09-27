@@ -26,9 +26,25 @@ function button(label, className, onClick) {
   return node;
 }
 
+// 复用中的 keep-alive 连接被服务端关闭时，请求会直接抛 TypeError（Failed to fetch），
+// 且不会到达服务器日志；这类网络层失败自动重试一次
+async function fetchWithRetry(url, init) {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      return await fetch(url, init);
+    } catch {
+      throw new Error('网络连接失败，请重试；若反复失败，请切换网络或换一个浏览器打开');
+    }
+  }
+}
+
 async function request(path, options = {}) {
   const { method = 'GET', body, raw = false, headers = {} } = options;
-  const response = await fetch(`${API}${path}`, {
+  const response = await fetchWithRetry(`${API}${path}`, {
     method,
     credentials: 'include',
     headers: raw ? headers : (body ? { 'Content-Type': 'application/json' } : undefined),
@@ -68,9 +84,13 @@ async function enterPanel() {
   $('#panel').hidden = false;
   if (!state.meta) {
     state.meta = await request('/meta');
-    $('#headerHint').textContent = state.meta.headers.join('、');
-    if (!state.meta.media.writable) {
-      const banner = $('#warnBanner');
+    $('#headerHint').textContent = (state.meta.headers || []).join('、');
+    const banner = $('#warnBanner');
+    if (!state.meta.extensions) {
+      // 典型场景：静态文件更新了但后端镜像没重建，字段对不上
+      banner.textContent = '前后端版本不一致（/meta 缺少 extensions 字段），媒体区无法使用。请在项目目录执行 docker compose up -d --build 后刷新本页。';
+      banner.hidden = false;
+    } else if (!state.meta.media.writable) {
       banner.textContent = '容器对静态资源目录没有写权限，上传会失败。请检查 docker-compose.yml 里 app 服务的 ./static 挂载是否已去掉 :ro，并执行 docker compose up -d。';
       banner.hidden = false;
     }
@@ -385,6 +405,14 @@ function pickActive(files, key, extensions) {
 
 function renderMedia() {
   if (!state.media) return;
+  if (!state.meta.extensions) {
+    for (const selector of ['#ownSlots', '#sharedSlots', '#musicList']) {
+      const box = $(selector);
+      box.textContent = '';
+      box.append(el('p', 'muted', '前后端版本不一致，媒体区无法渲染；请执行 docker compose up -d --build 后刷新本页'));
+    }
+    return;
+  }
   const extensions = state.meta.extensions.image;
   const student = state.students.find(item => item.studentId === state.mediaStudentId) || null;
   const ownDir = student ? (student.bgDir || student.studentId) : '';

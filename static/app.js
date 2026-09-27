@@ -30,9 +30,26 @@ const musicToggle = document.querySelector('#musicToggle');
 let swiper = null;
 let reportData = null;
 
+// 手机端常见的一类失败：复用中的 keep-alive 连接刚好被服务端关闭，
+// 请求发到已关闭的 socket 上会直接抛 TypeError（Failed to fetch），
+// 且不会到达服务器日志。这类情况自动重试一次即可恢复。
+async function fetchWithRetry(url, init) {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      return await fetch(url, init);
+    } catch {
+      throw new Error('网络连接失败，请重试；若反复失败，请切换网络或换一个浏览器打开');
+    }
+  }
+}
+
 async function request(path, options = {}) {
   const { method = 'GET', body } = options;
-  const response = await fetch(path, {
+  const response = await fetchWithRetry(path, {
     method,
     credentials: 'include',
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
