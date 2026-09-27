@@ -286,7 +286,7 @@ docker compose exec -T app node scripts/set-admin.js admin --delete # 删除
 | `POST /media/upload?kind=&dir=&name=&overwrite=` | 上传/替换（`dir` 为空=共享图，非空=写入该学员目录并自动建目录） |
 | `DELETE /media?kind=&dir=&name=` | 删除文件（顺带回收空目录） |
 
-**面板里的提示与确认**：不用浏览器的原生 `confirm/alert/prompt`（样式与深色主题不一致、手机上还很丑），统一走页面内组件。**操作成功/信息类**反馈用右下角轻提示（`#toastBox` + `toast()`：默认 4.5 秒自动消失、点一下提前关闭、多条会堆叠、遮蔽类警告 7 秒），**错误与参数校验**仍用对话框（需要管理员看清并确认）。对话框是 `#dialogOverlay` + `confirmDialog / alertDialog / promptDialog` 三个 Promise 封装；危险操作（删除成员、批量删除、删除文件、删除专属图）的确认按钮是红色，标题与按钮文案按场景区分；点空白处或按 Esc 等于取消。
+**面板里的提示与确认**：不用浏览器的原生 `confirm/alert/prompt`（样式与深色主题不一致、手机上还很丑），统一走页面内组件。**操作成功/信息类**反馈用右下角轻提示（`#toastBox` + `toast()`：默认 4.5 秒自动消失、多条会堆叠、遮蔽类警告 7 秒、带「撤销」的停留 10 秒）。提示内部是「文字 + 撤销 + 小叉」一行排布：**提示本身不响应点击**（避免误触把撤销一起关掉），要关只能点右侧的小叉。**错误与参数校验**仍用对话框（需要管理员看清并确认）。对话框是 `#dialogOverlay` + `confirmDialog / alertDialog / promptDialog` 三个 Promise 封装；危险操作（删除成员、批量删除、删除文件、删除专属图）的确认按钮是红色，标题与按钮文案按场景区分；点空白处或按 Esc 等于取消。
 
 **实现要点（改动时请保持这些约束）**：
 

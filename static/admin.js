@@ -116,11 +116,11 @@ function toast(message, options = {}) {
   };
   let timer = null;
 
+  // 撤销按钮：跟在文字右侧同一行，别掉到下面去
   if (action) {
     const actionButton = el('button', 'toast-action', action.label);
     actionButton.type = 'button';
-    actionButton.addEventListener('click', (event) => {
-      event.stopPropagation(); // 别把点击冒泡给整条提示（否则会重复处理）
+    actionButton.addEventListener('click', () => {
       clearTimeout(timer);
       dismiss();
       action.onClick();
@@ -128,14 +128,20 @@ function toast(message, options = {}) {
     node.append(actionButton);
   }
 
+  // 关闭用小叉，整条提示本身不响应点击（避免误触把撤销按钮一起关掉）
+  const closeButton = el('button', 'toast-close', '×');
+  closeButton.type = 'button';
+  closeButton.setAttribute('aria-label', '关闭提示');
+  closeButton.addEventListener('click', () => {
+    clearTimeout(timer);
+    dismiss();
+  });
+  node.append(closeButton);
+
   box.append(node);
   requestAnimationFrame(() => node.classList.add('is-visible'));
 
   timer = setTimeout(dismiss, duration);
-  node.addEventListener('click', () => { // 点一下提前关掉
-    clearTimeout(timer);
-    dismiss();
-  });
   return node;
 }
 

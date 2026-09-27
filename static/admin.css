@@ -356,7 +356,10 @@ audio { width: 100%; margin-top: 4px; }
 }
 
 .toast {
-  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 12px 16px;
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
   border-radius: var(--radius);
@@ -365,9 +368,6 @@ audio { width: 100%; margin-top: 4px; }
   color: var(--text);
   font-size: 14px;
   line-height: 1.6;
-  white-space: pre-line;
-  word-break: break-word;
-  cursor: pointer;
   pointer-events: auto;
   opacity: 0;
   transform: translateY(8px);
@@ -379,21 +379,41 @@ audio { width: 100%; margin-top: 4px; }
 .toast.warn { border-left-color: var(--warn); }
 .toast.error { border-left-color: var(--danger); }
 
-.toast-text { display: block; }
+.toast-text { flex: 1; min-width: 0; white-space: pre-line; word-break: break-word; }
 
-/* 撤销按钮：做成提示里的次要按钮，一眼看到又不喧宾夺主 */
+/* 撤销按钮：和文字同一行，放在右侧 */
 .toast-action {
-  margin-top: 8px;
-  padding: 7px 12px;
+  flex: none;
+  padding: 6px 12px;
   border: 1px solid rgba(125, 211, 252, 0.5);
   border-radius: 8px;
   background: rgba(125, 211, 252, 0.16);
   color: var(--accent);
   font-size: 13px;
   font-family: inherit;
+  white-space: nowrap;
   cursor: pointer;
 }
 .toast-action:active { background: rgba(125, 211, 252, 0.28); }
+
+/* 关闭按钮：整条提示不响应点击，只认这个小叉 */
+.toast-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+}
+.toast-close:hover { background: var(--surface-strong); color: var(--text); }
 
 @media (max-width: 640px) {
   .toast-box {
