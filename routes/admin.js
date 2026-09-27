@@ -5,6 +5,7 @@ const path = require('path');
 const records = require('../lib/student-records');
 const media = require('../lib/media');
 const { AttemptLimiter } = require('../rate-limit');
+const { UndoBuffer } = require('../lib/undo-buffer');
 
 const ADMIN_SESSION_MS = 12 * 60 * 60 * 1000; // 管理员会话 12 小时，比学员的 7 天短
 const JSON_LIMIT = '2mb'; // 全局 express.json() 默认只有 100kb，几百人的批量文本会被 413
@@ -61,6 +62,12 @@ module.exports = function createAdminRouter({ db }) {
   const deleteStudent = db.prepare('DELETE FROM students WHERE student_id = ?');
   const deleteStudentSessions = db.prepare("DELETE FROM sessions WHERE json_extract(sess, '$.studentId') = ?");
   const deleteOtherStudentSessions = db.prepare("DELETE FROM sessions WHERE sid != ? AND json_extract(sess, '$.studentId') = ?");
+
+  /* ---------- 撤销：改动前先留一份记录快照 ---------- */
+  const undos = new UndoBuffer();
+  // SELECT * 出来的行正好和 UPSERT_SQL 的命名参数一一对应，可直接回写
+  const restoreStudent = db.prepare(records.UPSERT_SQL);
+  const snapshotStudents = ids => ids.map(id => findStudent.get(id)).filter(Boolean);
 
   /* ---------- 管理员登录限流（独立实例，避免和学员互相连坐） ---------- */
   const adminUserLimiter = new AttemptLimiter({ maxFailures: 5, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 });
@@ -228,6 +235,7 @@ module.exports = function createAdminRouter({ db }) {
       if (item.action === 'unchanged') return res.json({ success: true, changed: [], otherSessionsRemoved: 0 });
 
       await records.fillPasswords([item]);
+      const before = snapshotStudents([studentId]); // 改动前留底，供「撤销」还原
       records.applyRecords(db, [item]);
 
       let otherSessionsRemoved = 0;
@@ -237,17 +245,31 @@ module.exports = function createAdminRouter({ db }) {
         // 管理员改密码后，把这个学员在其他设备上的会话全部下线
         otherSessionsRemoved = deleteOtherStudentSessions.run(req.sessionID, studentId).changes;
       }
-      res.json({ success: true, changed, otherSessionsRemoved });
+      res.json({ success: true, changed, otherSessionsRemoved, undo: undos.remember('编辑成员', before) });
     } catch (err) {
       next(err);
     }
   });
 
   router.delete('/students/:studentId', requireAdmin, (req, res) => {
+    const before = snapshotStudents([req.params.studentId]);
     const info = deleteStudent.run(req.params.studentId);
     if (info.changes === 0) return res.status(404).json({ error: '成员不存在' });
     const sessionsRemoved = deleteStudentSessions.run(req.params.studentId).changes;
-    res.json({ success: true, sessionsRemoved });
+    res.json({ success: true, sessionsRemoved, undo: undos.remember('删除成员', before) });
+  });
+
+  // 撤销上一次改动（删除成员、批量修改、批量删除、单条编辑都支持）
+  router.post('/students/undo', requireAdmin, jsonBody, (req, res) => {
+    const token = String((req.body && req.body.token) || '');
+    const entry = undos.take(token);
+    if (!entry) return res.status(404).json({ error: '撤销已过期或已使用过' });
+
+    const run = db.transaction(() => {
+      for (const row of entry.rows) restoreStudent.run(row);
+    });
+    run();
+    res.json({ success: true, label: entry.label, restored: entry.rows.length });
   });
 
   /* ---------- 批量操作 ---------- */
@@ -282,6 +304,8 @@ module.exports = function createAdminRouter({ db }) {
 
       const resetPassword = body.resetPasswordToDefault === true;
       if (fields.length === 0 && !resetPassword) return res.status(400).json({ error: '没有要修改的内容' });
+
+      const before = snapshotStudents(ids); // 改动前的快照，供「撤销」还原
 
       const items = [];
       const skipped = [];
@@ -319,6 +343,7 @@ module.exports = function createAdminRouter({ db }) {
         skipped,
         passwordReset: passwordResetIds.length,
         otherSessionsRemoved,
+        undo: undos.remember('批量修改', before),
       });
     } catch (err) {
       next(err);
@@ -330,6 +355,7 @@ module.exports = function createAdminRouter({ db }) {
     if (ids.length === 0) return res.status(400).json({ error: '请先勾选成员' });
     if (ids.length > BATCH_LIMIT) return res.status(400).json({ error: `一次最多删除 ${BATCH_LIMIT} 人` });
 
+    const before = snapshotStudents(ids); // 删除前留底，供「撤销」还原
     const skipped = [];
     let deleted = 0;
     const run = db.transaction(() => {
@@ -342,7 +368,7 @@ module.exports = function createAdminRouter({ db }) {
     run();
 
     const sessionsRemoved = removeSessionsFor(ids);
-    res.json({ success: true, deleted, sessionsRemoved, skipped });
+    res.json({ success: true, deleted, sessionsRemoved, skipped, undo: undos.remember('批量删除', before) });
   });
 
   // 预览某个学员看到的报告（含解析后的背景图与音乐），用于排查资源是否配对

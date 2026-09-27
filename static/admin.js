@@ -105,22 +105,59 @@ document.addEventListener('keydown', (event) => {
 /* ---------- 轻提示：成功/信息类反馈，右下角自动消失（错误与确认仍走对话框） ---------- */
 
 function toast(message, options = {}) {
-  const { type = 'ok', duration = 4500 } = options;
+  const { type = 'ok', duration = 4500, action = null } = options;
   const box = $('#toastBox');
-  const node = el('div', `toast ${type}`, message);
-  box.append(node);
-  requestAnimationFrame(() => node.classList.add('is-visible'));
+  const node = el('div', `toast ${type}`);
+  node.append(el('span', 'toast-text', message));
 
   const dismiss = () => {
     node.classList.remove('is-visible');
     setTimeout(() => node.remove(), 220);
   };
-  const timer = setTimeout(dismiss, duration);
+  let timer = null;
+
+  if (action) {
+    const actionButton = el('button', 'toast-action', action.label);
+    actionButton.type = 'button';
+    actionButton.addEventListener('click', (event) => {
+      event.stopPropagation(); // 别把点击冒泡给整条提示（否则会重复处理）
+      clearTimeout(timer);
+      dismiss();
+      action.onClick();
+    });
+    node.append(actionButton);
+  }
+
+  box.append(node);
+  requestAnimationFrame(() => node.classList.add('is-visible'));
+
+  timer = setTimeout(dismiss, duration);
   node.addEventListener('click', () => { // 点一下提前关掉
     clearTimeout(timer);
     dismiss();
   });
   return node;
+}
+
+// 带「撤销」按钮的轻提示参数：撤销窗口比普通提示长一些
+function undoToast(undo) {
+  if (!undo) return { duration: 6000 };
+  return {
+    duration: 10000,
+    action: { label: '撤销', onClick: () => runUndo(undo.token) },
+  };
+}
+
+async function runUndo(token) {
+  try {
+    const result = await request('/students/undo', { method: 'POST', body: { token } });
+    toast(`已还原 ${result.restored} 位成员（${result.label}）`);
+    await loadStudents();
+    await loadMedia();
+  } catch (error) {
+    if (error.status === 401) return showLogin('登录已过期，请重新登录');
+    showError(error);
+  }
 }
 
 async function request(path, options = {}) {
@@ -367,7 +404,7 @@ $('#batchForm').addEventListener('submit', async (event) => {
     await loadMedia();
     toast(`已更新 ${result.updated} 位成员`
       + (result.unchanged ? `，${result.unchanged} 位无变化` : '')
-      + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
+      + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''), undoToast(result.undo));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     showBatchMessage(error.message);
@@ -385,7 +422,7 @@ $('#batchResetBtn').addEventListener('click', async () => {
     clearSelection();
     await loadStudents();
     toast(`已重置 ${result.passwordReset} 位成员的密码`
-      + (result.otherSessionsRemoved ? `，注销了 ${result.otherSessionsRemoved} 个登录会话` : ''));
+      + (result.otherSessionsRemoved ? `，注销了 ${result.otherSessionsRemoved} 个登录会话` : ''), undoToast(result.undo));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     showError(error);
@@ -403,7 +440,7 @@ $('#batchDeleteBtn').addEventListener('click', async () => {
     await loadMedia();
     toast(`已删除 ${result.deleted} 位成员`
       + (result.sessionsRemoved ? `，注销 ${result.sessionsRemoved} 个登录会话` : '')
-      + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
+      + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''), undoToast(result.undo));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     showError(error);
@@ -520,7 +557,7 @@ $('#editorForm').addEventListener('submit', async (event) => {
         toast('没有任何改动', { type: 'info' });
       } else {
         const extra = result.otherSessionsRemoved > 0 ? `，并让该学员 ${result.otherSessionsRemoved} 个设备下线` : '';
-        toast(`已保存：${result.changed.join('、') || '无字段变化'}${extra}`);
+        toast(`已保存：${result.changed.join('、') || '无字段变化'}${extra}`, undoToast(result.undo));
       }
     } else {
       const result = await request('/students', { method: 'POST', body: payload });
@@ -551,7 +588,7 @@ async function removeStudent(item) {
     const result = await request(`/students/${encodeURIComponent(item.studentId)}`, { method: 'DELETE' });
     await loadStudents();
     await loadMedia();
-    toast(`已删除${result.sessionsRemoved > 0 ? `，并注销其 ${result.sessionsRemoved} 个登录会话` : ''}`);
+    toast(`已删除${result.sessionsRemoved > 0 ? `，并注销其 ${result.sessionsRemoved} 个登录会话` : ''}`, undoToast(result.undo));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     showError(error);
@@ -685,7 +722,7 @@ $('#mediaBatchForm').addEventListener('submit', async (event) => {
       await loadMedia();
       toast(`已更新 ${result.updated} 位成员`
         + (result.unchanged ? `，${result.unchanged} 位无变化` : '')
-        + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
+        + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''), undoToast(result.undo));
       return;
     }
 
