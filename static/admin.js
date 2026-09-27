@@ -511,6 +511,169 @@ async function previewReport(item) {
 
 $('#reportClose').addEventListener('click', () => { $('#reportOverlay').hidden = true; });
 
+/* ---------- 批量媒体操作 ---------- */
+
+// 学员的专属图目录：显式指定过就用它，否则用学号
+function mediaDirOf(studentId) {
+  const student = state.students.find(item => item.studentId === studentId);
+  return (student && student.bgDir) || studentId;
+}
+
+function showMediaBatchMessage(text) {
+  const message = $('#mediaBatchMessage');
+  message.textContent = text;
+  message.hidden = false;
+}
+
+const MEDIA_BATCH_ROWS = {
+  music: ['#mediaBatchMusicRow'],
+  dir: ['#mediaBatchDirRow'],
+  upload: ['#mediaBatchUploadRow'],
+  remove: ['#mediaBatchRemoveRow'],
+};
+
+function syncMediaBatchRows() {
+  const action = $('#mediaBatchAction').value;
+  for (const [key, selectors] of Object.entries(MEDIA_BATCH_ROWS)) {
+    for (const selector of selectors) $(selector).hidden = key !== action;
+  }
+}
+
+$('#mediaBatchAction').addEventListener('change', syncMediaBatchRows);
+
+$('#batchMediaBtn').addEventListener('click', () => {
+  const count = state.selected.size;
+  if (count === 0) return;
+  if (!state.media) return showError(new Error('媒体数据还没加载完，稍后再试'));
+
+  $('#mediaBatchMessage').hidden = true;
+  $('#mediaBatchProgress').textContent = '';
+  $('#mediaBatchSummary').textContent = `将作用于已勾选的 ${count} 位成员`;
+
+  // 音乐下拉：第一项是「清空」，其余是音乐库里的文件
+  const musicSelect = $('#mediaBatchMusicFile');
+  musicSelect.textContent = '';
+  const clearOption = el('option', null, '（清空，回到与学号同名）');
+  clearOption.value = '';
+  musicSelect.append(clearOption);
+  for (const track of state.media.music) {
+    const option = el('option', null, `${track.name}（${Math.round(track.size / 1024)}KB）`);
+    option.value = track.name;
+    musicSelect.append(option);
+  }
+
+  for (const selectId of ['#mediaBatchSlotKey', '#mediaBatchRemoveKey']) {
+    const select = $(selectId);
+    select.textContent = '';
+    for (const key of state.meta.pageKeys) {
+      const option = el('option', null, key);
+      option.value = key;
+      select.append(option);
+    }
+  }
+
+  $('#mediaBatchAction').value = 'music';
+  $('#mediaBatchDirValue').value = '';
+  $('#mediaBatchImage').value = '';
+  syncMediaBatchRows();
+  $('#mediaBatchOverlay').hidden = false;
+});
+
+$('#mediaBatchCancel').addEventListener('click', () => { $('#mediaBatchOverlay').hidden = true; });
+
+$('#mediaBatchForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const ids = Array.from(state.selected);
+  if (ids.length === 0) return showMediaBatchMessage('没有勾选成员');
+
+  const action = $('#mediaBatchAction').value;
+  const progress = $('#mediaBatchProgress');
+  const submit = $('#mediaBatchForm button[type="submit"]');
+  $('#mediaBatchMessage').hidden = true;
+  submit.disabled = true;
+
+  try {
+    // 指派音乐 / 设置图目录：复用成员批量接口，一次请求搞定
+    if (action === 'music' || action === 'dir') {
+      const set = action === 'music'
+        ? { bgMusic: $('#mediaBatchMusicFile').value }
+        : { bgDir: $('#mediaBatchDirValue').value.trim() };
+      const result = await request('/students/batch', { method: 'POST', body: { studentIds: ids, set } });
+      $('#mediaBatchOverlay').hidden = true;
+      clearSelection();
+      await loadStudents();
+      await loadMedia();
+      window.alert(`已更新 ${result.updated} 位成员`
+        + (result.unchanged ? `，${result.unchanged} 位无变化` : '')
+        + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
+      return;
+    }
+
+    // 上传同一张图到每名学员各自的专属目录
+    if (action === 'upload') {
+      const file = $('#mediaBatchImage').files && $('#mediaBatchImage').files[0];
+      if (!file) return showMediaBatchMessage('请选择要上传的图片');
+      const extensions = state.meta.extensions.image;
+      const ext = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+      if (!extensions.includes(ext)) return showMediaBatchMessage(`只支持 ${extensions.join(' / ')} 格式`);
+      if (file.size > state.meta.limits.image) return showMediaBatchMessage(`图片不能超过 ${Math.round(state.meta.limits.image / 1024 / 1024)}MB`);
+
+      const slot = $('#mediaBatchSlotKey').value;
+      if (!window.confirm(`将把这张图写进 ${ids.length} 位学员各自的专属目录（同名直接覆盖），继续吗？`)) return;
+
+      let done = 0;
+      let failed = 0;
+      for (const [index, studentId] of ids.entries()) {
+        // 必须写进该学员实际读取的目录（显式指定过图目录时就不是学号目录）
+        const dir = mediaDirOf(studentId);
+        progress.textContent = `上传中 ${index + 1}/${ids.length}：${dir}`;
+        try {
+          await upload({ kind: 'image', dir, name: `${slot}${ext}`, file, overwrite: true });
+          done += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      progress.textContent = `完成：成功 ${done} 位${failed ? `，失败 ${failed} 位` : ''}`;
+      await loadMedia();
+      return;
+    }
+
+    // 删除这些学员在某槽位的专属图
+    if (action === 'remove') {
+      const slot = $('#mediaBatchRemoveKey').value;
+      const targets = [];
+      for (const studentId of ids) {
+        const dir = mediaDirOf(studentId);
+        const entry = state.media.images.dirs.find(item => item.dir === dir);
+        const file = entry && entry.files.find(item => item.key === slot && item.supported);
+        if (file) targets.push({ dir, name: file.name });
+      }
+      if (targets.length === 0) return showMediaBatchMessage('这些学员在该槽位都没有专属图，无需删除');
+      if (!window.confirm(`将删除 ${targets.length} 位学员在「${slot}」的专属图，继续吗？`)) return;
+
+      let done = 0;
+      let failed = 0;
+      for (const [index, target] of targets.entries()) {
+        progress.textContent = `删除中 ${index + 1}/${targets.length}：${target.dir}/${target.name}`;
+        try {
+          await request(`/media?kind=image&dir=${encodeURIComponent(target.dir)}&name=${encodeURIComponent(target.name)}`, { method: 'DELETE' });
+          done += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      progress.textContent = `完成：删除 ${done} 个${failed ? `，失败 ${failed} 个` : ''}`;
+      await loadMedia();
+    }
+  } catch (error) {
+    if (error.status === 401) return showLogin('登录已过期，请重新登录');
+    showMediaBatchMessage(error.message);
+  } finally {
+    submit.disabled = false;
+  }
+});
+
 /* ---------- 媒体资源 ---------- */
 
 async function loadMedia() {

@@ -50,6 +50,7 @@
         <span id="batchCount"></span>
         <span class="grow"></span>
         <button id="batchEditBtn" class="primary" type="button">批量修改</button>
+        <button id="batchMediaBtn" class="primary" type="button">批量媒体</button>
         <button id="batchResetBtn" class="ghost" type="button">重置密码</button>
         <button id="batchDeleteBtn" class="danger" type="button">批量删除</button>
         <button id="batchClearBtn" class="ghost" type="button">取消选择</button>
@@ -201,6 +202,61 @@
     <div class="toolbar">
       <button class="primary" type="submit">应用</button>
       <button id="batchCancel" class="ghost" type="button">取消</button>
+    </div>
+  </form>
+</div>
+
+<!-- 批量媒体操作 -->
+<div id="mediaBatchOverlay" class="overlay" hidden>
+  <form id="mediaBatchForm" class="card editor" novalidate>
+    <h2>批量媒体操作</h2>
+    <p id="mediaBatchSummary" class="muted"></p>
+
+    <label>要做什么
+      <select id="mediaBatchAction" class="field">
+        <option value="music">指派背景音乐</option>
+        <option value="dir">设置背景图目录</option>
+        <option value="upload">上传专属背景图（每人各存一份）</option>
+        <option value="remove">删除专属背景图（回到共享图）</option>
+      </select>
+    </label>
+
+    <div id="mediaBatchMusicRow">
+      <label>音乐文件
+        <select id="mediaBatchMusicFile" class="field"></select>
+      </label>
+      <p class="muted">选「（清空，回到与学号同名）」可取消他们的音乐设定。</p>
+    </div>
+
+    <div id="mediaBatchDirRow" hidden>
+      <label>背景图目录名
+        <input id="mediaBatchDirValue" class="field" type="text" maxlength="64" placeholder="例如 2021001 或 shared-theme">
+      </label>
+      <p class="muted">留空表示回到默认（用各人的学号作目录）。</p>
+    </div>
+
+    <div id="mediaBatchUploadRow" hidden>
+      <label>槽位
+        <select id="mediaBatchSlotKey" class="field"></select>
+      </label>
+      <label>图片文件
+        <input id="mediaBatchImage" class="field" type="file" accept="image/*">
+      </label>
+      <p class="muted">同一张图会写进每名学员各自的目录（images/学号/槽位名），同名直接覆盖。</p>
+    </div>
+
+    <div id="mediaBatchRemoveRow" hidden>
+      <label>槽位
+        <select id="mediaBatchRemoveKey" class="field"></select>
+      </label>
+      <p class="muted">删除这些学员在该槽位的专属图，删掉后他们回落到共享图或页面自带渐变；没有专属图的学员会被跳过。</p>
+    </div>
+
+    <p id="mediaBatchMessage" class="msg error" hidden></p>
+    <p id="mediaBatchProgress" class="muted"></p>
+    <div class="toolbar">
+      <button class="primary" type="submit">执行</button>
+      <button id="mediaBatchCancel" class="ghost" type="button">取消</button>
     </div>
   </form>
 </div>
