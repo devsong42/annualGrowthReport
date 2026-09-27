@@ -141,6 +141,9 @@ main { padding: 12px 16px 60px; }
 .row-head { display: flex; align-items: flex-start; gap: 10px; }
 .row-head input[type="checkbox"] { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
 
+/* 原生 file 控件的按钮文字改不了，用 label 包住隐藏的 input 来自定义文字 */
+.file-picker { cursor: pointer; user-select: none; }
+
 /* 列表 */
 .list { display: grid; gap: 10px; }
 .row {

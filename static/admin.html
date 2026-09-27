@@ -90,8 +90,12 @@
         槽位名：<span id="batchKeys"></span>
       </p>
       <div class="toolbar">
-        <input id="batchFiles" type="file" multiple accept="image/*,audio/*">
-        <input id="batchDir" type="file" webkitdirectory directory multiple>
+        <label class="ghost file-picker">选择文件（可多选）
+          <input id="batchFiles" type="file" multiple accept="image/*,audio/*" hidden>
+        </label>
+        <label class="ghost file-picker">选择整个文件夹
+          <input id="batchDir" type="file" webkitdirectory directory multiple hidden>
+        </label>
         <label class="check-all"><input id="batchOverwrite" type="checkbox"> 同名文件直接覆盖</label>
       </div>
       <div class="toolbar">
