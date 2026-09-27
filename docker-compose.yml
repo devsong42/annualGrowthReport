@@ -15,8 +15,8 @@ services:
     volumes:
       - sqlite_data:/app/data
       - ./import:/app/import
-      # 只读挂载静态资源目录，供后端检查学员的背景图/背景音乐文件是否存在
-      - ./static:/app/static:ro
+      # 静态资源目录：可写，因为管理面板要能上传图片与音乐；nginx 侧仍以只读挂载
+      - ./static:/app/static
     networks:
       - report-network
     healthcheck:

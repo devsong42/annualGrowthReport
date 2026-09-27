@@ -28,6 +28,14 @@ db.exec(`
     sess TEXT,
     expire INTEGER
   );
+
+  CREATE TABLE IF NOT EXISTS admins (
+    username TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    password_changed_at TEXT,
+    last_login_at TEXT
+  );
 `);
 
 // CREATE TABLE IF NOT EXISTS 不会给已存在的表补字段，老库需要手动补列

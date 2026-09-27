@@ -82,7 +82,7 @@ CREATE TABLE sessions (
 | `/api/report` | GET | 返回当前登录学员的报告数据（需 Session） |
 | `/api/logout` | POST | 销毁 Session |
 | `/api/password` | POST | 学员自助改密码：校验当前密码，改完让其他设备的会话失效 |
-| `/api/admin/import` | POST | （可选）管理员上传 Excel 批量导入 |
+| `/api/admin/*` | 见 §14 | 管理控制台的全部接口（需管理员会话） |
 
 关键约束：
 
@@ -103,7 +103,7 @@ CREATE TABLE sessions (
 
 ## 7. 前端实现要点（已实现，`static/`）
 
-页面：1 个登录页（独立于 Swiper，页面底部提示「初始密码为学号后六位」）+ 7 屏报告页（开场 → 加入天数 → 志愿时长 → 活动次数 → 年度伙伴 → 部长寄语 → 结尾）+ 1 个修改密码页（从结尾页的按钮进入）。文件为 `index.html` / `style.css` / `app.js`，第三方库放 `static/vendor/`（Swiper 11.2.10、Animate.css 4.1.1，已本地化，不从 CDN 引）。
+页面：1 个登录页（独立于 Swiper，页面底部提示「初始密码为学号后六位」）+ 7 屏报告页（开场 → 加入天数 → 志愿时长 → 活动次数 → 年度伙伴 → 部长寄语 → 结尾）+ 1 个修改密码页（从结尾页的按钮进入）。文件为 `index.html` / `style.css` / `app.js`，第三方库放 `static/vendor/`（Swiper 11.2.10、Animate.css 4.1.1，已本地化，不从 CDN 引）。管理控制台是三份独立文件 `admin.html` / `admin.js` / `admin.css`，入口 `/admin.html`（见 §14）。
 
 - Swiper 垂直翻页：`direction: 'vertical'`、`speed: 800`（网易云式阻尼感约 700–900）、`mousewheel: true`、`pagination.clickable`，在 `slideChangeTransitionStart` 里触发当前屏动画
 - **没用 `swiper.animate` 插件**（它是 Swiper 3/4 时代产物，与现代版本兼容性没保证），改为自实现：元素写 `data-animate="fadeInUp"`（可加 `data-delay` / `data-duration`），进入该屏时先移除再挂上 `animate__animated animate__<效果>`，配合 `void offsetWidth` 强制重排，实现「再次进入重新播放」
@@ -125,12 +125,13 @@ CREATE TABLE sessions (
 
 **docker-compose 要点**：
 
-- `app` 服务不映射端口到宿主机，仅由 Nginx 经内部网络转发（更安全）；数据库卷 `sqlite_data` → `/app/data`（`DB_PATH=/app/data/report.db`），`./import` → `/app/import` 供导入脚本读 Excel，`./static` → `/app/static`（`ro`）供后端判断学员的背景图/音乐文件是否存在
+- `app` 服务不映射端口到宿主机，仅由 Nginx 经内部网络转发（更安全）；数据库卷 `sqlite_data` → `/app/data`（`DB_PATH=/app/data/report.db`），`./import` → `/app/import` 供导入脚本读 Excel，`./static` → `/app/static`（**可写**：管理面板要上传图片/音乐，nginx 侧仍是只读）
+- 上传的文件属主是 root（app 容器以 root 运行）。宿主机上的 debian 用户想原地覆盖这些文件会 EACCES，需要先删或 `mv`，也可以 `sudo chown -R debian:debian static/images static/music`
 - `nginx` 服务映射 `${HTTP_PORT}:80`，挂载 `nginx/default.conf` 与 `./static`（`ro`），`depends_on` app 的健康检查
 - 服务间通过自定义 bridge 网络 `report-network` 通信，Nginx 中 `proxy_pass http://app:3000`
 - `app.build.network: host`：容器默认 bridge 网络没有 IPv6 路由，构建期借用宿主机网络（原因见 §11）
 
-**nginx 配置要点**（`nginx/default.conf`）：静态托管 + `/api/` 反代 + `/images/` 不存在时直接 404（不回落到首页）；已启用 gzip（`comp_level 2`、`min_length 1024`，只压文本类，图片与 `/api/` 显式 `gzip off`）—— 文本资源首访从 266KB 降到约 64KB
+**nginx 配置要点**（`nginx/default.conf`）：静态托管 + `/api/` 反代（`proxy_read_timeout 300s`，批量导入逐行算 bcrypt 可能超过默认 60s）+ `/images/`、`/music/` 不存在时直接 404 并带 `X-Content-Type-Options: nosniff`；已启用 gzip（`comp_level 2`、`min_length 1024`，只压文本类，图片与 `/api/` 显式 `gzip off`）—— 文本资源首访从 266KB 降到约 64KB；`/admin` 302 到 `/admin.html`，面板三个文件加 `Cache-Control: no-cache`（避免部署后加载旧 JS）
 
 **常用运维命令**
 
@@ -230,8 +231,50 @@ docker compose exec app node -e "const db=require('./db');db.prepare('delete fro
 
 - 域名与 HTTPS 证书是否已备好
 - 学员规模（决定 SQLite 是否长期够用）
-- 管理后台：已决定先用 `scripts/import-excel.js` 命令行导入（见 §12），网页上传导入等有需要再做
+- 管理后台：**已实现网页控制台**（`/admin.html`，见 §14），命令行导入脚本保留作为批量维护手段
 - 服务器发行版已确认：本机即 Debian 13，Docker 与 Compose 均已装好
 - HTTPS：需要域名解析到公网入口（当前公网入口是 frps，需在 frpc.toml 增加 80/443 的 tcp 代理）
 - 密码策略已定：初始密码 = 学号后六位（见 §12），登录页有对应提示；如需更复杂的初始密码规则可再调整
 - 背景图：尚未提供，当前用每屏自带渐变占位；放好图后放进 `static/images/` 即可自动生效（文件名约定见 §7）
+
+## 14. 管理控制台（`/admin.html`）
+
+管理员账号用 CLI 创建，密码只以 bcrypt 哈希入库、不进任何配置文件：
+
+```bash
+# 创建/改密（推荐：密码从标准输入读，不落 shell 历史）
+printf '你的密码\n' | docker compose exec -T app node scripts/set-admin.js admin
+docker compose exec -T app node scripts/set-admin.js admin '直接在命令里写密码'
+docker compose exec -T app node scripts/set-admin.js --list        # 列出所有管理员
+docker compose exec -T app node scripts/set-admin.js admin --delete # 删除
+```
+
+用户名限字母/数字/下划线/点/短横线（1–32 位），密码 8–64 位；改密或删号会立刻注销该管理员的已登录会话。
+
+**面板功能**：成员列表搜索/编辑/删除、单条新增、粘贴文本批量添加（每行一名学员，字段顺序同 Excel，逗号或 Tab 分隔，字段内含逗号用双引号包裹，一行即单条、多行即多条）、Excel 导入（预览 → 确认）、Excel 导出、背景图与背景音乐的上传/替换/删除/指派。所有写操作都先预览再确认。
+
+**接口一览**（全部在 `/api/admin` 下，未登录统一 `401 {"error":"管理员未登录"}`）：
+
+| 方法 路径 | 作用 |
+|---|---|
+| `POST /login`、`POST /logout`、`GET /session` | 登录（独立限流：用户名 5 次/15 分钟、IP 10 次/15 分钟）、退出、查登录态 |
+| `GET /meta` | 下发中文表头、7 个图片槽位、大小上限、扩展名白名单、`media.writable`（诊断挂载是否可写） |
+| `GET /students?q=&limit=` | 成员列表（不含 password_hash），搜索用 `instr()` |
+| `POST /students` / `PUT /students/:studentId` / `DELETE /students/:studentId` | 新增 / 局部更新（只改提交的字段；`password` 缺省=不改，改了会踢掉该学员其他设备）/ 删除（并清其会话） |
+| `GET /students/:studentId/report` | 预览该学员会看到的报告与资源解析结果（排查图片/音乐是否配对） |
+| `POST /import/text/preview`、`POST /import/text` | 文本批量：预览 / 执行（幂等，重复提交无害） |
+| `POST /import/xlsx/preview`、`POST /import/xlsx` | Excel 批量：预览 / 执行（原始字节 + `X-File-Name` 头，不使用 multipart） |
+| `GET /export/xlsx`、`GET /export/template.xlsx` | 导出名单（密码列必然为空）/ 下载导入模板 |
+| `GET /media` | 媒体全景：共享图、各学员专属图、音乐，含「谁在用」与「未生效的同名文件」 |
+| `POST /media/upload?kind=&dir=&name=&overwrite=` | 上传/替换（`dir` 为空=共享图，非空=写入该学员目录并自动建目录） |
+| `DELETE /media?kind=&dir=&name=` | 删除文件（顺带回收空目录） |
+
+**实现要点（改动时请保持这些约束）**：
+
+- 成员数据规则只有一处：`lib/student-records.js` 被 CLI 与面板共用 —— Excel 导入、文本批量、单条新增/编辑用同一套校验与密码三规则，不要另写一套
+- 同名文件默认 409，需带 `overwrite=1` 才覆盖；同基名下优先级更高的格式会遮蔽新文件，上传响应里的 `shadows` 会明确指出是哪个文件
+- 上传安全：扩展名白名单 + 可疑字符拦截 + `path.resolve` 前缀断言（Express 5 会解码路由参数，`%2F` 会变成 `/`）；写盘用「临时文件 + rename」，避免 nginx 读到半个文件
+- 资源 URL 一律带 `?v=<mtime>-<size>`：`/images/`、`/music/` 的浏览器缓存是 30 天，不带版本号时换了图也不会刷新
+- 批量导入是「先异步算 bcrypt，再单事务写入」两阶段：几百名新学员同步哈希会阻塞事件循环几十秒，期间全站卡顿、健康检查可能判死
+- 管理接口挂在全局 `express.json()` **之前**且自带 2MB 上限（全局默认仅 100kb，几百人的批量文本会被 413）
+- 管理员与学员共用同一个会话 cookie：`POST /api/admin/logout` 只退管理面板；学员端的 `POST /api/logout` 会销毁整个会话（连管理面板一起退）

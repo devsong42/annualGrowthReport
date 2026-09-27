@@ -1,9 +1,9 @@
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const fs = require('fs');
-const path = require('path');
 const db = require('./db');
+const media = require('./lib/media');
+const createAdminRouter = require('./routes/admin');
 const SQLiteSessionStore = require('./session-store');
 const { AttemptLimiter } = require('./rate-limit');
 
@@ -18,7 +18,6 @@ if (!SESSION_SECRET) {
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json());
 
 app.use(session({
   name: COOKIE_NAME,
@@ -33,6 +32,12 @@ app.use(session({
     maxAge: 1000 * 60 * 60 * 24 * 7,
   },
 }));
+
+// 管理接口自带 body 解析（上限更高），必须挂在全局 express.json() 之前，
+// 否则几百人的批量文本会先被全局默认的 100kb 上限拦成 413
+app.use('/api/admin', createAdminRouter({ db }));
+
+app.use(express.json());
 
 const findStudentForLogin = db.prepare('SELECT student_id, password_hash FROM students WHERE student_id = ?');
 const findReport = db.prepare(`
@@ -85,58 +90,7 @@ const deleteOtherSessions = db.prepare(`
   WHERE sid != ? AND json_extract(sess, '$.studentId') = ?
 `);
 
-/* ---------- 学员专属的背景图与背景音乐 ---------- */
-// 资源放在宿主机的 static/ 下，compose 以只读方式挂进容器，这里直接看文件在不在
-const STATIC_DIR = process.env.STATIC_DIR || path.join(__dirname, 'static');
-// 数组顺序即优先级：同一个名字有多个格式时取排在前面的
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
-const AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.ogg', '.wav'];
-
-function listFiles(dir, extensions) {
-  try {
-    return fs.readdirSync(dir)
-      .filter(name => extensions.includes(path.extname(name).toLowerCase()))
-      .sort((a, b) => {
-        const priority = extensions.indexOf(path.extname(a).toLowerCase()) - extensions.indexOf(path.extname(b).toLowerCase());
-        return priority !== 0 ? priority : a.localeCompare(b);
-      });
-  } catch {
-    return []; // 目录不存在就等于没配资源
-  }
-}
-
-// 同一个基名下只保留优先级最高的那个文件
-function byBasename(files) {
-  const map = new Map();
-  for (const name of files) {
-    const base = path.parse(name).name;
-    if (!map.has(base)) map.set(base, name);
-  }
-  return map;
-}
-
-// 用去掉扩展名的文件名作键，页面写 data-bg="01-opening" 即可，扩展名用 jpg/png/webp 都行；
-// 学员自己的目录覆盖共享目录
-function buildBackgroundMap(studentId, bgDir) {
-  const ownDir = bgDir || studentId;
-  const result = {};
-  for (const name of byBasename(listFiles(path.join(STATIC_DIR, 'images'), IMAGE_EXTENSIONS)).values()) {
-    result[path.parse(name).name] = `/images/${name}`;
-  }
-  for (const name of byBasename(listFiles(path.join(STATIC_DIR, 'images', ownDir), IMAGE_EXTENSIONS)).values()) {
-    result[path.parse(name).name] = `/images/${encodeURIComponent(ownDir)}/${name}`;
-  }
-  return result;
-}
-
-// 显式写了文件名就按它找（写全名优先，只写基名则按格式优先级），否则找与学号同名的音频
-function resolveMusicUrl(studentId, bgMusic) {
-  const files = listFiles(path.join(STATIC_DIR, 'music'), AUDIO_EXTENSIONS);
-  const wanted = bgMusic
-    ? (files.includes(bgMusic) ? bgMusic : byBasename(files).get(bgMusic))
-    : byBasename(files).get(studentId);
-  return wanted ? `/music/${wanted}` : null;
-}
+/* ---------- 学员专属的背景图与背景音乐：解析逻辑在 lib/media.js ---------- */
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -221,8 +175,8 @@ app.get('/api/report', (req, res) => {
     activityCount: row.activity_count,
     partner: row.partner,
     message: row.message,
-    backgrounds: buildBackgroundMap(studentId, row.bg_dir),
-    music: resolveMusicUrl(studentId, row.bg_music),
+    backgrounds: media.buildBackgroundMap(studentId, row.bg_dir),
+    music: media.resolveMusicUrl(studentId, row.bg_music),
   });
 });
 
@@ -239,8 +193,11 @@ app.use('/api', (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: '服务器内部错误' });
+  const status = err.status || err.statusCode || 500;
+  if (status === 413) return res.status(413).json({ error: '请求内容过大' });
+  if (status === 400 && err.type) return res.status(400).json({ error: '请求格式错误' });
+  if (status >= 500) console.error(err);
+  res.status(status).json({ error: status >= 500 ? '服务器内部错误' : err.message || '请求有误' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {

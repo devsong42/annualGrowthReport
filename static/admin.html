@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>管理控制台 · 年度成长报告</title>
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+<!-- 登录 -->
+<section id="loginScreen" class="screen login">
+  <form id="loginForm" class="card login-card" novalidate>
+    <h1>管理控制台</h1>
+    <p class="muted">用管理员账号登录（账号由 <code>scripts/set-admin.js</code> 创建）</p>
+    <input id="username" class="field" type="text" autocomplete="username" placeholder="用户名" maxlength="32">
+    <input id="adminPassword" class="field" type="password" autocomplete="current-password" placeholder="密码" maxlength="64">
+    <p id="loginError" class="msg error" role="alert" hidden></p>
+    <button id="loginBtn" class="primary" type="submit">登录</button>
+  </form>
+</section>
+
+<!-- 面板 -->
+<div id="panel" hidden>
+  <header class="topbar">
+    <strong>管理控制台</strong>
+    <span id="whoami" class="muted"></span>
+    <button id="logoutBtn" class="ghost" type="button">退出</button>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab is-active" data-tab="students" type="button">成员</button>
+    <button class="tab" data-tab="media" type="button">媒体资源</button>
+    <button class="tab" data-tab="io" type="button">导入导出</button>
+  </nav>
+
+  <p id="warnBanner" class="msg warn" hidden></p>
+
+  <main>
+    <!-- 成员 -->
+    <section id="tab-students" class="tab-panel">
+      <div class="toolbar">
+        <input id="searchInput" class="field grow" type="search" placeholder="搜索学号或姓名">
+        <button id="addStudentBtn" class="primary" type="button">新增成员</button>
+        <button id="refreshBtn" class="ghost" type="button">刷新</button>
+      </div>
+      <p id="studentCount" class="muted"></p>
+      <div id="studentList" class="list"></div>
+    </section>
+
+    <!-- 媒体 -->
+    <section id="tab-media" class="tab-panel" hidden>
+      <div class="toolbar">
+        <label class="muted" for="mediaStudent">选择学员：</label>
+        <select id="mediaStudent" class="field grow"></select>
+      </div>
+      <p id="ownDirHint" class="muted"></p>
+
+      <h2>该学员的专属背景图</h2>
+      <p class="muted">放在 <code id="ownDirPath"></code> 下，会覆盖同名的共享图；某个槽位没配就用共享图或页面自带渐变。</p>
+      <div id="ownSlots" class="slots"></div>
+
+      <h2>共享背景图（所有学员的默认图）</h2>
+      <div id="sharedSlots" class="slots"></div>
+
+      <h2>背景音乐</h2>
+      <p class="muted">文件名与学号同名时该学员自动使用；也可以在下面为选中学员单独指定，或共用同一首。</p>
+      <div class="toolbar">
+        <input id="musicFile" type="file" accept="audio/*">
+        <button id="uploadMusicBtn" class="primary" type="button">上传音乐</button>
+      </div>
+      <div id="musicList" class="list"></div>
+    </section>
+
+    <!-- 导入导出 -->
+    <section id="tab-io" class="tab-panel" hidden>
+      <h2>批量添加 / 更新（粘贴文本）</h2>
+      <p class="muted">每行一名学员，字段顺序：<code id="headerHint"></code>。逗号或 Tab 分隔，字段内含逗号请用双引号包起来；空行与 <code>#</code> 开头的行会忽略。一行就是单条，多行就是多条。</p>
+      <textarea id="importText" class="field" rows="6" placeholder="2021004,init123456,王五,外联部,120,60,8,赵六,继续加油,,"></textarea>
+      <div class="toolbar">
+        <button id="previewTextBtn" class="primary" type="button">预览</button>
+        <button id="commitTextBtn" class="primary" type="button" disabled>确认导入</button>
+      </div>
+
+      <h2>Excel 导入</h2>
+      <div class="toolbar">
+        <input id="excelFile" type="file" accept=".xlsx,.xls">
+        <button id="previewExcelBtn" class="primary" type="button">预览</button>
+        <button id="commitExcelBtn" class="primary" type="button" disabled>确认导入</button>
+        <a class="ghost" href="/api/admin/export/template.xlsx">下载导入模板</a>
+      </div>
+
+      <h2>导出</h2>
+      <p><a class="ghost" href="/api/admin/export/xlsx">下载全部成员 Excel</a></p>
+      <p class="muted">密码列必然为空：库里只存哈希，导不出来。重新导入时，老学员的密码会被保留（密码列空白），新学员用「学号后六位」作初始密码。</p>
+
+      <h2>预览结果</h2>
+      <div id="previewBox" class="list"></div>
+    </section>
+  </main>
+</div>
+
+<!-- 编辑成员 -->
+<div id="editorOverlay" class="overlay" hidden>
+  <form id="editorForm" class="card editor" novalidate>
+    <h2 id="editorTitle">编辑成员</h2>
+    <div class="grid">
+      <label>学号<input id="f_studentId" class="field" type="text" readonly></label>
+      <label>姓名<input id="f_name" class="field" type="text" maxlength="64"></label>
+      <label>部门<input id="f_department" class="field" type="text" maxlength="64"></label>
+      <label>加入天数<input id="f_joinDays" class="field" type="number" inputmode="numeric" step="1"></label>
+      <label>志愿时长<input id="f_volunteerHours" class="field" type="number" inputmode="decimal" step="0.5"></label>
+      <label>活动次数<input id="f_activityCount" class="field" type="number" inputmode="numeric" step="1"></label>
+      <label>年度伙伴<input id="f_partner" class="field" type="text" maxlength="64"></label>
+      <label>背景图目录<input id="f_bgDir" class="field" type="text" maxlength="64" placeholder="留空=用学号目录"></label>
+      <label>背景音乐<input id="f_bgMusic" class="field" type="text" maxlength="64" placeholder="留空=找与学号同名"></label>
+    </div>
+    <label>部长寄语<textarea id="f_message" class="field" rows="4"></textarea></label>
+    <label id="passwordLabel">新密码<input id="f_password" class="field" type="password" autocomplete="new-password" placeholder="留空=不修改密码" maxlength="64"></label>
+    <p id="editorMessage" class="msg error" hidden></p>
+    <div class="toolbar">
+      <button class="primary" type="submit">保存</button>
+      <button id="editorCancel" class="ghost" type="button">取消</button>
+    </div>
+  </form>
+</div>
+
+<!-- 预览报告 -->
+<div id="reportOverlay" class="overlay" hidden>
+  <div class="card editor">
+    <h2 id="reportTitle">报告预览</h2>
+    <div id="reportBody" class="list"></div>
+    <div class="toolbar">
+      <button id="reportClose" class="ghost" type="button">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script src="admin.js"></script>
+</body>
+</html>

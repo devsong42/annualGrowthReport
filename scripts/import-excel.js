@@ -1,154 +1,45 @@
 #!/usr/bin/env node
+// 命令行导入学员数据（规则与面板完全一致，都来自 lib/student-records）
 const fs = require('fs');
 const path = require('path');
-const XLSX = require('xlsx');
-const bcrypt = require('bcryptjs');
 const db = require('../db');
-
-const HEADERS = ['学号', '密码', '姓名', '部门', '加入天数', '志愿时长', '活动次数', '年度伙伴', '部长寄语', '背景图目录', '背景音乐'];
-const REQUIRED_HEADERS = ['学号', '姓名'];
-const BCRYPT_ROUNDS = 10;
-
-const findExisting = db.prepare('SELECT password_hash FROM students WHERE student_id = ?');
-
-const upsert = db.prepare(`
-  INSERT INTO students (
-    student_id, name, department, join_days, volunteer_hours,
-    activity_count, partner, message, password_hash, bg_dir, bg_music
-  ) VALUES (
-    @student_id, @name, @department, @join_days, @volunteer_hours,
-    @activity_count, @partner, @message, @password_hash, @bg_dir, @bg_music
-  )
-  ON CONFLICT(student_id) DO UPDATE SET
-    name = excluded.name,
-    department = excluded.department,
-    join_days = excluded.join_days,
-    volunteer_hours = excluded.volunteer_hours,
-    activity_count = excluded.activity_count,
-    partner = excluded.partner,
-    message = excluded.message,
-    password_hash = excluded.password_hash,
-    bg_dir = excluded.bg_dir,
-    bg_music = excluded.bg_music
-`);
+const records = require('../lib/student-records');
 
 function usage() {
   console.log(`用法：
   node scripts/import-excel.js <数据文件.xlsx>     按学号导入或更新学员数据
   node scripts/import-excel.js --template [路径]   生成空白模板（默认 import/students-template.xlsx）
 
-Excel 首行为表头，列名：${HEADERS.join('、')}
+Excel 首行为表头，列名：${records.HEADERS.join('、')}
 密码列填了值就用该值；留空时新学员用「学号后六位」作初始密码，已有学员保留数据库里的原密码。`);
 }
 
-function toInt(value) {
-  const n = parseInt(value, 10);
-  return Number.isFinite(n) ? n : null;
-}
-
-function toNumber(value) {
-  const n = parseFloat(value);
-  return Number.isFinite(n) ? n : null;
-}
-
 function writeTemplate(target) {
-  const sheet = XLSX.utils.aoa_to_sheet([
-    HEADERS,
-    ['2021001', 'init123456', '张三', '技术部', 365, 120, 15, '李四', '愿你保持热爱', '', ''],
-    ['2021002', '', '王五', '宣传部', 280, 85, 10, '赵六', '未来可期', '', ''],
-  ]);
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, 'students');
-
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  XLSX.writeFile(book, target);
+  fs.writeFileSync(target, records.templateBuffer());
   console.log(`模板已生成：${target}`);
   console.log('提示：示例行仅供参照，正式使用时请删掉；密码列留空时，新学员用「学号后六位」作初始密码。');
   console.log('「背景图目录」「背景音乐」可留空：留空时自动用 images/学号/ 目录与 music/学号.mp3。');
 }
 
-function readRows(file) {
-  const book = XLSX.readFile(file);
-  const sheetName = book.SheetNames.includes('students') ? 'students' : book.SheetNames[0];
-  const rows = XLSX.utils.sheet_to_json(book.Sheets[sheetName], { defval: '' });
-  console.log(`读取工作表「${sheetName}」，共 ${rows.length} 行数据`);
-  return rows;
-}
-
-function toRecord(row) {
-  const text = key => String(row[key] ?? '').trim();
-
-  const studentId = text('学号');
-  if (!studentId) return { error: '缺少学号' };
-
-  const name = text('姓名');
-  if (!name) return { error: '缺少姓名' };
-
-  const password = text('密码');
-  let passwordHash = null;
-  let usedDefaultPassword = false;
-  if (password) {
-    passwordHash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
-  } else {
-    const existing = findExisting.get(studentId);
-    if (existing) {
-      passwordHash = existing.password_hash;
-    } else {
-      // 初始密码规则：学号后六位
-      passwordHash = bcrypt.hashSync(studentId.slice(-6), BCRYPT_ROUNDS);
-      usedDefaultPassword = true;
-    }
-  }
-
-  return {
-    usedDefaultPassword,
-    value: {
-      student_id: studentId,
-      name,
-      department: text('部门'),
-      join_days: toInt(text('加入天数')),
-      volunteer_hours: toNumber(text('志愿时长')),
-      activity_count: toInt(text('活动次数')),
-      partner: text('年度伙伴'),
-      message: text('部长寄语'),
-      password_hash: passwordHash,
-      bg_dir: text('背景图目录') || null,
-      bg_music: text('背景音乐') || null,
-    },
-  };
-}
-
 function importFile(file) {
-  const rows = readRows(file);
+  const { rows, sheetName } = records.parseExcelBuffer(fs.readFileSync(file));
+  console.log(`读取工作表「${sheetName}」，共 ${rows.length} 行数据`);
   if (rows.length === 0) throw new Error('没有读到数据行，请检查表头是否在第 1 行');
 
-  const present = Object.keys(rows[0]);
-  const missing = REQUIRED_HEADERS.filter(h => !present.includes(h));
+  const missing = records.missingHeaders(rows);
   if (missing.length > 0) throw new Error(`缺少必需的列：${missing.join('、')}`);
 
-  const skipped = [];
-  let imported = 0;
-  let defaulted = 0;
+  const plan = records.planRecords(db, rows);
+  records.fillPasswordsSync(plan.items);
+  const result = records.applyRecords(db, plan.items);
 
-  const run = db.transaction(() => {
-    rows.forEach((row, index) => {
-      const { value, error, usedDefaultPassword } = toRecord(row);
-      if (error) {
-        skipped.push(`第 ${index + 2} 行：${error}`);
-        return;
-      }
-      upsert.run(value);
-      imported += 1;
-      if (usedDefaultPassword) defaulted += 1;
-    });
-  });
-  run();
-
-  console.log(`导入完成：成功 ${imported} 条，跳过 ${skipped.length} 条`);
-  if (defaulted > 0) {
-    console.log(`其中 ${defaulted} 名新学员使用初始密码（学号后六位），建议提醒他们登录后自行修改`);
+  console.log(`导入完成：成功 ${result.imported} 条，跳过 ${result.skipped.length} 条`);
+  if (result.unchanged > 0) console.log(`（另有 ${result.unchanged} 条与库中数据一致，未做改动）`);
+  if (result.defaulted > 0) {
+    console.log(`其中 ${result.defaulted} 名新学员使用初始密码（学号后六位），建议提醒他们登录后自行修改`);
   }
-  skipped.forEach(line => console.log(`  - ${line}`));
+  result.skipped.forEach(item => console.log(`  - 第 ${item.line} 行：${item.message}`));
   console.log(`数据库：${db.name}`);
 }
 
@@ -166,7 +57,6 @@ function main() {
     usage();
     process.exit(1);
   }
-
   importFile(file);
 }
 
