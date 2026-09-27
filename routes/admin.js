@@ -250,6 +250,101 @@ module.exports = function createAdminRouter({ db }) {
     res.json({ success: true, sessionsRemoved });
   });
 
+  /* ---------- 批量操作 ---------- */
+
+  const BATCH_LIMIT = 500;
+  // 允许批量设置的字段（学号/姓名/密码不能批量改，密码走独立的「重置」）
+  const BATCH_FIELDS = ['department', 'joinDays', 'volunteerHours', 'activityCount', 'partner', 'message', 'bgDir', 'bgMusic'];
+
+  function readBatchIds(body) {
+    const list = Array.isArray(body && body.studentIds) ? body.studentIds : [];
+    return list.map(id => String(id).trim()).filter(Boolean);
+  }
+
+  function removeSessionsFor(studentIds) {
+    if (studentIds.length === 0) return 0;
+    const placeholders = studentIds.map(() => '?').join(',');
+    return db.prepare(`DELETE FROM sessions WHERE json_extract(sess, '$.studentId') IN (${placeholders})`).run(...studentIds).changes;
+  }
+
+  // 批量修改字段 / 批量把密码重置为「学号后六位」
+  router.post('/students/batch', requireAdmin, jsonBody, async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const ids = readBatchIds(body);
+      if (ids.length === 0) return res.status(400).json({ error: '请先勾选成员' });
+      if (ids.length > BATCH_LIMIT) return res.status(400).json({ error: `一次最多处理 ${BATCH_LIMIT} 人` });
+
+      const set = body.set && typeof body.set === 'object' ? body.set : {};
+      const fields = Object.keys(set);
+      const unknown = fields.filter(key => !BATCH_FIELDS.includes(key));
+      if (unknown.length > 0) return res.status(400).json({ error: `不支持批量修改这些字段：${unknown.join('、')}` });
+
+      const resetPassword = body.resetPasswordToDefault === true;
+      if (fields.length === 0 && !resetPassword) return res.status(400).json({ error: '没有要修改的内容' });
+
+      const items = [];
+      const skipped = [];
+      for (const studentId of ids) {
+        const existing = findStudent.get(studentId);
+        if (!existing) {
+          skipped.push({ studentId, message: '成员不存在' });
+          continue;
+        }
+        const merged = toStudentDto(existing);
+        merged.password = resetPassword ? studentId.slice(-6) : '';
+        for (const key of fields) merged[key] = set[key];
+
+        const plan = records.planRecords(db, [planSingle(merged.studentId, merged)]);
+        const item = plan.items[0];
+        if (item.error) {
+          skipped.push({ studentId, message: item.error });
+          continue;
+        }
+        items.push(item);
+      }
+
+      await records.fillPasswords(items); // 重置密码可能要算几百次哈希，必须异步
+      const result = records.applyRecords(db, items);
+
+      const passwordResetIds = items
+        .filter(item => item.passwordAction === 'set' || item.passwordAction === 'default')
+        .map(item => item.record.student_id);
+      const otherSessionsRemoved = removeSessionsFor(passwordResetIds);
+
+      res.json({
+        success: true,
+        updated: result.imported,
+        unchanged: result.unchanged,
+        skipped,
+        passwordReset: passwordResetIds.length,
+        otherSessionsRemoved,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/students/batch-delete', requireAdmin, jsonBody, (req, res) => {
+    const ids = readBatchIds(req.body);
+    if (ids.length === 0) return res.status(400).json({ error: '请先勾选成员' });
+    if (ids.length > BATCH_LIMIT) return res.status(400).json({ error: `一次最多删除 ${BATCH_LIMIT} 人` });
+
+    const skipped = [];
+    let deleted = 0;
+    const run = db.transaction(() => {
+      for (const studentId of ids) {
+        const info = deleteStudent.run(studentId);
+        if (info.changes === 0) skipped.push({ studentId, message: '成员不存在' });
+        else deleted += 1;
+      }
+    });
+    run();
+
+    const sessionsRemoved = removeSessionsFor(ids);
+    res.json({ success: true, deleted, sessionsRemoved, skipped });
+  });
+
   // 预览某个学员看到的报告（含解析后的背景图与音乐），用于排查资源是否配对
   router.get('/students/:studentId/report', requireAdmin, (req, res) => {
     const row = findStudent.get(req.params.studentId);

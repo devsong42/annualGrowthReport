@@ -41,9 +41,18 @@
     <!-- 成员 -->
     <section id="tab-students" class="tab-panel">
       <div class="toolbar">
+        <label class="check-all"><input id="selectAll" type="checkbox"> 全选</label>
         <input id="searchInput" class="field grow" type="search" placeholder="搜索学号或姓名">
         <button id="addStudentBtn" class="primary" type="button">新增成员</button>
         <button id="refreshBtn" class="ghost" type="button">刷新</button>
+      </div>
+      <div id="batchBar" class="batch-bar" hidden>
+        <span id="batchCount"></span>
+        <span class="grow"></span>
+        <button id="batchEditBtn" class="primary" type="button">批量修改</button>
+        <button id="batchResetBtn" class="ghost" type="button">重置密码</button>
+        <button id="batchDeleteBtn" class="danger" type="button">批量删除</button>
+        <button id="batchClearBtn" class="ghost" type="button">取消选择</button>
       </div>
       <p id="studentCount" class="muted"></p>
       <div id="studentList" class="list"></div>
@@ -135,6 +144,35 @@
       <button id="reportClose" class="ghost" type="button">关闭</button>
     </div>
   </div>
+</div>
+
+<!-- 批量修改 -->
+<div id="batchOverlay" class="overlay" hidden>
+  <form id="batchForm" class="card editor" novalidate>
+    <h2>批量修改</h2>
+    <p id="batchSummary" class="muted"></p>
+    <label>要修改的字段
+      <select id="batchField" class="field">
+        <option value="department">部门</option>
+        <option value="joinDays">加入天数</option>
+        <option value="volunteerHours">志愿时长</option>
+        <option value="activityCount">活动次数</option>
+        <option value="partner">年度伙伴</option>
+        <option value="message">部长寄语</option>
+        <option value="bgDir">背景图目录</option>
+        <option value="bgMusic">背景音乐</option>
+      </select>
+    </label>
+    <label>新值
+      <input id="batchValue" class="field" type="text" placeholder="留空表示清空该字段">
+    </label>
+    <p class="muted">注意：清空「背景图目录」或「背景音乐」会让这些成员回到默认规则（学号目录 / 与学号同名的音乐）。</p>
+    <p id="batchMessage" class="msg error" hidden></p>
+    <div class="toolbar">
+      <button class="primary" type="submit">应用</button>
+      <button id="batchCancel" class="ghost" type="button">取消</button>
+    </div>
+  </form>
 </div>
 
 <script src="admin.js"></script>

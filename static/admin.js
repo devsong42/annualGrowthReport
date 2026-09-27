@@ -4,6 +4,7 @@ const state = {
   meta: null,
   students: [],
   keyword: '',
+  selected: new Set(),
   media: null,
   mediaStudentId: '',
   preview: { source: null, text: '', file: null },
@@ -158,11 +159,22 @@ function renderStudents() {
   list.textContent = '';
   if (state.students.length === 0) {
     list.append(el('p', 'muted', '没有匹配的成员'));
+    updateSelectionUi();
     return;
   }
 
   for (const item of state.students) {
     const card = el('div', 'row');
+
+    const checkbox = el('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = state.selected.has(item.studentId);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) state.selected.add(item.studentId);
+      else state.selected.delete(item.studentId);
+      updateSelectionUi();
+    });
+
     const main = el('div', 'row-main');
     main.append(el('strong', null, `${item.name}（${item.studentId}）`));
     const facts = [
@@ -177,7 +189,10 @@ function renderStudents() {
     if (item.bgDir) tags.append(el('span', 'tag', `专属图目录：${item.bgDir}`));
     if (item.bgMusic) tags.append(el('span', 'tag', `音乐：${item.bgMusic}`));
     if (tags.childElementCount > 0) main.append(tags);
-    card.append(main);
+
+    const head = el('div', 'row-head');
+    head.append(checkbox, main);
+    card.append(head);
 
     const actions = el('div', 'row-actions');
     actions.append(button('编辑', 'ghost', () => openEditor(item)));
@@ -192,7 +207,127 @@ function renderStudents() {
     card.append(actions);
     list.append(card);
   }
+
+  updateSelectionUi();
 }
+
+/* ---------- 勾选与批量操作 ---------- */
+
+function updateSelectionUi() {
+  const count = state.selected.size;
+  $('#batchBar').hidden = count === 0;
+  $('#batchCount').textContent = `已选 ${count} 人`;
+
+  const visibleIds = state.students.map(item => item.studentId);
+  const allSelected = visibleIds.length > 0 && visibleIds.every(id => state.selected.has(id));
+  const selectAll = $('#selectAll');
+  selectAll.checked = allSelected;
+  selectAll.indeterminate = !allSelected && visibleIds.some(id => state.selected.has(id));
+}
+
+function clearSelection() {
+  state.selected.clear();
+  renderStudents(); // 重新渲染即可同步每行的勾选状态
+}
+
+$('#selectAll').addEventListener('change', (event) => {
+  for (const item of state.students) {
+    if (event.target.checked) state.selected.add(item.studentId);
+    else state.selected.delete(item.studentId);
+  }
+  renderStudents();
+});
+
+$('#batchClearBtn').addEventListener('click', clearSelection);
+
+function showBatchMessage(text) {
+  const message = $('#batchMessage');
+  message.textContent = text;
+  message.hidden = false;
+}
+
+$('#batchEditBtn').addEventListener('click', () => {
+  if (state.selected.size === 0) return;
+  const message = $('#batchMessage');
+  message.hidden = true;
+  $('#batchSummary').textContent = `将修改已勾选的 ${state.selected.size} 位成员`;
+  $('#batchValue').value = '';
+  $('#batchOverlay').hidden = false;
+});
+
+$('#batchCancel').addEventListener('click', () => { $('#batchOverlay').hidden = true; });
+
+const BATCH_NUMERIC_FIELDS = new Set(['joinDays', 'volunteerHours', 'activityCount']);
+
+$('#batchForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const ids = Array.from(state.selected);
+  if (ids.length === 0) return showBatchMessage('没有勾选成员');
+
+  const field = $('#batchField').value;
+  const raw = $('#batchValue').value;
+  let value = raw;
+  if (BATCH_NUMERIC_FIELDS.has(field)) {
+    value = raw.trim() === '' ? null : Number(raw);
+    if (value !== null && !Number.isFinite(value)) return showBatchMessage('这个字段需要填数字');
+  }
+
+  const label = $('#batchField').selectedOptions[0].textContent;
+  const shown = String(raw).trim() || '（清空）';
+  if (!window.confirm(`确定把 ${ids.length} 位成员的「${label}」改成「${shown}」吗？`)) return;
+
+  const submit = $('#batchForm button[type="submit"]');
+  submit.disabled = true;
+  try {
+    const result = await request('/students/batch', { method: 'POST', body: { studentIds: ids, set: { [field]: value } } });
+    $('#batchOverlay').hidden = true;
+    clearSelection();
+    await loadStudents();
+    await loadMedia();
+    window.alert(`已更新 ${result.updated} 位成员`
+      + (result.unchanged ? `，${result.unchanged} 位无变化` : '')
+      + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
+  } catch (error) {
+    if (error.status === 401) return showLogin('登录已过期，请重新登录');
+    showBatchMessage(error.message);
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+$('#batchResetBtn').addEventListener('click', async () => {
+  const ids = Array.from(state.selected);
+  if (ids.length === 0) return;
+  if (!window.confirm(`确定把这 ${ids.length} 位成员的密码重置为「学号后六位」吗？他们在其他设备上的登录会被强制下线。`)) return;
+  try {
+    const result = await request('/students/batch', { method: 'POST', body: { studentIds: ids, resetPasswordToDefault: true } });
+    clearSelection();
+    await loadStudents();
+    window.alert(`已重置 ${result.passwordReset} 位成员的密码`
+      + (result.otherSessionsRemoved ? `，注销了 ${result.otherSessionsRemoved} 个登录会话` : ''));
+  } catch (error) {
+    if (error.status === 401) return showLogin('登录已过期，请重新登录');
+    showError(error);
+  }
+});
+
+$('#batchDeleteBtn').addEventListener('click', async () => {
+  const ids = Array.from(state.selected);
+  if (ids.length === 0) return;
+  if (!window.confirm(`确定删除这 ${ids.length} 位成员吗？该操作不可撤销，他们也将无法再登录。`)) return;
+  try {
+    const result = await request('/students/batch-delete', { method: 'POST', body: { studentIds: ids } });
+    clearSelection();
+    await loadStudents();
+    await loadMedia();
+    window.alert(`已删除 ${result.deleted} 位成员`
+      + (result.sessionsRemoved ? `，注销 ${result.sessionsRemoved} 个登录会话` : '')
+      + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
+  } catch (error) {
+    if (error.status === 401) return showLogin('登录已过期，请重新登录');
+    showError(error);
+  }
+});
 
 let searchTimer = null;
 $('#searchInput').addEventListener('input', (event) => {

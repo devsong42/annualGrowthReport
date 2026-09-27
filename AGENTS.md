@@ -251,7 +251,7 @@ docker compose exec -T app node scripts/set-admin.js admin --delete # 删除
 
 用户名限字母/数字/下划线/点/短横线（1–32 位），密码 8–64 位；改密或删号会立刻注销该管理员的已登录会话。
 
-**面板功能**：成员列表搜索/编辑/删除、单条新增、粘贴文本批量添加（每行一名学员，字段顺序同 Excel，逗号或 Tab 分隔，字段内含逗号用双引号包裹，一行即单条、多行即多条）、Excel 导入（预览 → 确认）、Excel 导出、背景图与背景音乐的上传/替换/删除/指派。所有写操作都先预览再确认。
+**面板功能**：成员列表搜索/编辑/删除、**勾选成员批量操作**（全选、跨搜索保留选择，可批量改某个字段、把密码重置为学号后六位、批量删除）、单条新增、粘贴文本批量添加（每行一名学员，字段顺序同 Excel，逗号或 Tab 分隔，字段内含逗号用双引号包裹，一行即单条、多行即多条）、Excel 导入（预览 → 确认）、Excel 导出、背景图与背景音乐的上传/替换/删除/指派。所有写操作都先预览或二次确认。
 
 **接口一览**（全部在 `/api/admin` 下，未登录统一 `401 {"error":"管理员未登录"}`）：
 
@@ -261,6 +261,8 @@ docker compose exec -T app node scripts/set-admin.js admin --delete # 删除
 | `GET /meta` | 下发中文表头、7 个图片槽位、大小上限、扩展名白名单、`media.writable`（诊断挂载是否可写） |
 | `GET /students?q=&limit=` | 成员列表（不含 password_hash），搜索用 `instr()` |
 | `POST /students` / `PUT /students/:studentId` / `DELETE /students/:studentId` | 新增 / 局部更新（只改提交的字段；`password` 缺省=不改，改了会踢掉该学员其他设备）/ 删除（并清其会话） |
+| `POST /students/batch` | 批量修改：`set` 指定要改的字段（限部门/加入天数/志愿时长/活动次数/年度伙伴/部长寄语/背景图目录/背景音乐），或 `resetPasswordToDefault:true` 把密码批量重置为「学号后六位」；一次最多 500 人，重置密码会注销这些学员的会话 |
+| `POST /students/batch-delete` | 批量删除（连带清会话） |
 | `GET /students/:studentId/report` | 预览该学员会看到的报告与资源解析结果（排查图片/音乐是否配对） |
 | `POST /import/text/preview`、`POST /import/text` | 文本批量：预览 / 执行（幂等，重复提交无害） |
 | `POST /import/xlsx/preview`、`POST /import/xlsx` | Excel 批量：预览 / 执行（原始字节 + `X-File-Name` 头，不使用 multipart） |

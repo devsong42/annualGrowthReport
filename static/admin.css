@@ -123,6 +123,24 @@ main { padding: 12px 16px 60px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
 .grow { flex: 1; min-width: 160px; }
 
+/* 勾选与批量操作 */
+.check-all { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.check-all input { width: 18px; height: 18px; }
+.batch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  margin: 8px 0;
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  border-radius: var(--radius);
+  background: rgba(125, 211, 252, 0.12);
+}
+.batch-bar .grow { flex: 1; min-width: 0; }
+.row-head { display: flex; align-items: flex-start; gap: 10px; }
+.row-head input[type="checkbox"] { width: 20px; height: 20px; margin: 2px 0 0; flex: none; }
+
 /* 列表 */
 .list { display: grid; gap: 10px; }
 .row {
