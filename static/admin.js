@@ -86,6 +86,7 @@ async function enterPanel() {
   if (!state.meta) {
     state.meta = await request('/meta');
     $('#headerHint').textContent = (state.meta.headers || []).join('、');
+    $('#batchKeys').textContent = (state.meta.pageKeys || []).join('、');
     const banner = $('#warnBanner');
     if (!state.meta.extensions) {
       // 典型场景：静态文件更新了但后端镜像没重建，字段对不上
@@ -756,6 +757,166 @@ $('#uploadMusicBtn').addEventListener('click', async () => {
     }
     showError(error);
   }
+});
+
+/* ---------- 批量上传（按文件名自动归属） ---------- */
+
+let batchPlan = [];
+let batchUploading = false;
+
+function studentStmExists(studentId) {
+  return state.students.some(item => item.studentId === studentId);
+}
+
+// 从文件名或文件夹结构推断这个文件该放哪儿
+function parseMediaFile(file) {
+  const keys = state.meta.pageKeys;
+  const { image: imageExts, music: musicExts } = state.meta.extensions;
+
+  // 目录上传时 webkitRelativePath 形如 "我选的文件夹/2021001/01-opening.jpg"，
+  // 第一段是用户选中的文件夹本身，去掉它
+  const segments = (file.webkitRelativePath || '').split('/').filter(Boolean);
+  const parts = segments.length >= 3 ? segments.slice(1) : segments;
+  const baseName = parts.length > 0 ? parts[parts.length - 1] : file.name;
+  const ext = (baseName.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+  const stem = ext ? baseName.slice(0, baseName.length - ext.length) : baseName;
+  // 只有「确实是成员表里的学号」时才把目录当学号用，
+  // 否则「我选的文件夹/04-activities.webp」这种会被误判
+  const rawFolder = parts.length > 1 ? parts[0] : '';
+  const folder = rawFolder && studentStmExists(rawFolder) ? rawFolder : '';
+
+  // 1) 文件夹形式：<学号>/<槽位>.<扩展名>
+  if (folder && keys.includes(stem) && imageExts.includes(ext)) {
+    return { kind: 'image', dir: folder, name: `${stem}${ext}`, studentId: folder };
+  }
+  // 2) 共享图：<槽位>.<扩展名>
+  if (!folder && keys.includes(stem) && imageExts.includes(ext)) {
+    return { kind: 'image', dir: '', name: `${stem}${ext}` };
+  }
+  // 3) 学员专属图：<学号>-<槽位>.<扩展名> 或 <学号>_<槽位>.<扩展名>
+  const matched = stem.match(/^(.+?)[-_](.+)$/);
+  if (matched && keys.includes(matched[2]) && imageExts.includes(ext)) {
+    return { kind: 'image', dir: matched[1], name: `${matched[2]}${ext}`, studentId: matched[1] };
+  }
+  // 4) 背景音乐：<学号>.<扩展名>
+  if (!folder && musicExts.includes(ext) && /^[A-Za-z0-9_-]{1,32}$/.test(stem)) {
+    return { kind: 'music', dir: '', name: `${stem}${ext}`, studentId: stem };
+  }
+  return { error: '文件名无法识别：图片要用「槽位名」或「学号-槽位名」，音乐要用「学号」命名' };
+}
+
+function addToBatchPlan(files) {
+  for (const file of files) {
+    const parsed = parseMediaFile(file);
+    if (parsed.error) {
+      batchPlan.push({ file, status: 'error', message: parsed.error });
+      continue;
+    }
+    if (parsed.studentId && !studentStmExists(parsed.studentId)) {
+      batchPlan.push({ file, ...parsed, status: 'error', message: `成员表里没有 ${parsed.studentId}，先添加成员再传` });
+      continue;
+    }
+    const limit = parsed.kind === 'image' ? state.meta.limits.image : state.meta.limits.music;
+    if (file.size > limit) {
+      batchPlan.push({ file, ...parsed, status: 'error', message: `超过 ${Math.round(limit / 1024 / 1024)}MB 上限` });
+      continue;
+    }
+    batchPlan.push({ file, ...parsed, status: 'ready', message: '' });
+  }
+  renderBatchPlan();
+}
+
+function describeTarget(item) {
+  if (item.kind === 'music') return `${item.studentId} 的音乐 → music/${item.name}`;
+  if (item.dir) return `${item.dir} 的专属图 → images/${item.dir}/${item.name}`;
+  return `共享图 → images/${item.name}`;
+}
+
+const BATCH_STATUS = {
+  ready: ['update', '待上传'],
+  done: ['insert', '已上传'],
+  skipped: ['unchanged', '已跳过'],
+  error: ['error', '有问题'],
+};
+
+function renderBatchPlan() {
+  const box = $('#batchPlan');
+  box.textContent = '';
+  const ready = batchPlan.filter(item => item.status === 'ready').length;
+  $('#batchUploadBtn').disabled = batchUploading || ready === 0;
+  $('#batchClearPlanBtn').disabled = batchUploading || batchPlan.length === 0;
+
+  for (const item of batchPlan) {
+    const row = el('div', 'preview-item');
+    row.append(el('span', null, item.file.name));
+    row.append(el('span', 'muted', item.kind ? describeTarget(item) : '—'));
+    const [className, label] = BATCH_STATUS[item.status] || ['unchanged', item.status];
+    row.append(el('span', `badge ${className}`, label));
+    if (item.message) row.append(el('span', item.status === 'error' ? 'msg error' : 'muted', item.message));
+    box.append(row);
+  }
+}
+
+$('#batchFiles').addEventListener('change', (event) => {
+  addToBatchPlan(Array.from(event.target.files || []));
+  event.target.value = '';
+});
+
+$('#batchDir').addEventListener('change', (event) => {
+  addToBatchPlan(Array.from(event.target.files || []));
+  event.target.value = '';
+});
+
+$('#batchClearPlanBtn').addEventListener('click', () => {
+  batchPlan = [];
+  $('#batchProgress').textContent = '';
+  renderBatchPlan();
+});
+
+$('#batchUploadBtn').addEventListener('click', async () => {
+  const overwrite = $('#batchOverwrite').checked;
+  const ready = batchPlan.filter(item => item.status === 'ready');
+  if (ready.length === 0) return;
+  if (!window.confirm(`将上传 ${ready.length} 个文件${overwrite ? '（同名文件直接覆盖）' : '（遇到同名文件会跳过）'}，继续吗？`)) return;
+
+  const progress = $('#batchProgress');
+  batchUploading = true;
+  renderBatchPlan();
+  let done = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const [index, item] of ready.entries()) {
+    progress.textContent = `上传中 ${index + 1}/${ready.length}：${item.file.name}`;
+    try {
+      await upload({ kind: item.kind, dir: item.dir, name: item.name, file: item.file, overwrite });
+      item.status = 'done';
+      item.message = '';
+      done += 1;
+    } catch (error) {
+      if (error.status === 409) {
+        item.status = 'skipped';
+        item.message = '同名文件已存在（想覆盖请勾选上方选项后重传）';
+        skipped += 1;
+      } else if (error.status === 401) {
+        batchUploading = false;
+        renderBatchPlan();
+        return showLogin('登录已过期，请重新登录');
+      } else {
+        item.status = 'error';
+        item.message = error.message;
+        failed += 1;
+      }
+    }
+    renderBatchPlan();
+  }
+
+  batchUploading = false;
+  progress.textContent = `完成：成功 ${done} 个`
+    + (skipped ? `，跳过 ${skipped} 个` : '')
+    + (failed ? `，失败 ${failed} 个` : '');
+  renderBatchPlan();
+  await loadMedia();
 });
 
 /* ---------- 导入 / 导出 ---------- */
