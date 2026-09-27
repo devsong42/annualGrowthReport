@@ -721,6 +721,11 @@ $('#mediaStudent').addEventListener('change', (event) => {
   renderMedia();
 });
 
+$('#musicFile').addEventListener('change', (event) => {
+  const file = event.target.files && event.target.files[0];
+  $('#musicFileName').textContent = file ? file.name : '';
+});
+
 $('#uploadMusicBtn').addEventListener('click', async () => {
   const input = $('#musicFile');
   const file = input.files && input.files[0];
@@ -739,6 +744,7 @@ $('#uploadMusicBtn').addEventListener('click', async () => {
   try {
     const result = await upload({ kind: 'music', dir: '', name: name.trim(), file, overwrite: false });
     input.value = '';
+    $('#musicFileName').textContent = '';
     await loadMedia();
     window.alert(`已上传 ${result.file ? result.file.name : name}`);
   } catch (error) {
@@ -748,6 +754,7 @@ $('#uploadMusicBtn').addEventListener('click', async () => {
       try {
         await upload({ kind: 'music', dir: '', name: name.trim(), file, overwrite: true });
         input.value = '';
+        $('#musicFileName').textContent = '';
         await loadMedia();
         window.alert('已覆盖');
       } catch (err) {
@@ -983,6 +990,12 @@ $('#commitTextBtn').addEventListener('click', async () => {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     showError(error);
   }
+});
+
+$('#excelFile').addEventListener('change', (event) => {
+  const file = event.target.files && event.target.files[0];
+  $('#excelFileName').textContent = file ? file.name : '';
+  $('#commitExcelBtn').disabled = true; // 换了文件必须重新预览
 });
 
 $('#previewExcelBtn').addEventListener('click', async () => {

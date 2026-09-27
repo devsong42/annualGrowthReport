@@ -61,8 +61,8 @@
     <!-- 媒体 -->
     <section id="tab-media" class="tab-panel" hidden>
       <div class="toolbar">
-        <label class="muted" for="mediaStudent">选择学员：</label>
-        <select id="mediaStudent" class="field grow"></select>
+        <label class="field-label" for="mediaStudent">选择学员</label>
+        <select id="mediaStudent" class="field select-narrow"></select>
       </div>
       <p id="ownDirHint" class="muted"></p>
 
@@ -76,8 +76,11 @@
       <h2>背景音乐</h2>
       <p class="muted">文件名与学号同名时该学员自动使用；也可以在下面为选中学员单独指定，或共用同一首。</p>
       <div class="toolbar">
-        <input id="musicFile" type="file" accept="audio/*">
+        <label class="ghost file-picker">选择音频文件
+          <input id="musicFile" type="file" accept="audio/*" hidden>
+        </label>
         <button id="uploadMusicBtn" class="primary" type="button">上传音乐</button>
+        <span id="musicFileName" class="muted"></span>
       </div>
       <div id="musicList" class="list"></div>
 
@@ -118,10 +121,13 @@
 
       <h2>Excel 导入</h2>
       <div class="toolbar">
-        <input id="excelFile" type="file" accept=".xlsx,.xls">
+        <label class="ghost file-picker">选择 Excel 文件
+          <input id="excelFile" type="file" accept=".xlsx,.xls" hidden>
+        </label>
         <button id="previewExcelBtn" class="primary" type="button">预览</button>
         <button id="commitExcelBtn" class="primary" type="button" disabled>确认导入</button>
         <a class="ghost" href="/api/admin/export/template.xlsx">下载导入模板</a>
+        <span id="excelFileName" class="muted"></span>
       </div>
 
       <h2>导出</h2>
