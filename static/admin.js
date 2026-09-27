@@ -437,7 +437,7 @@ $('#batchForm').addEventListener('submit', async (event) => {
 
   const label = $('#batchField').selectedOptions[0].textContent;
   const shown = String(raw).trim() || '（清空）';
-  if (!await confirmDialog(`确定把 ${ids.length} 位成员的「${label}」改成「${shown}」吗？`, { title: '批量修改' })) return;
+  if (!await confirmDialog(`确定把 ${ids.length} 位成员的「${label}」改成「${shown}」吗？（改错可在提示上点「撤销」还原）`, { title: '批量修改' })) return;
 
   const submit = $('#batchForm button[type="submit"]');
   submit.disabled = true;
@@ -461,7 +461,7 @@ $('#batchForm').addEventListener('submit', async (event) => {
 $('#batchResetBtn').addEventListener('click', async () => {
   const ids = Array.from(state.selected);
   if (ids.length === 0) return;
-  if (!await confirmDialog(`确定把这 ${ids.length} 位成员的密码重置为「学号后六位」吗？他们在其他设备上的登录会被强制下线。`, { title: '重置密码' })) return;
+  if (!await confirmDialog(`确定把这 ${ids.length} 位成员的密码重置为「学号后六位」吗？他们在其他设备上的登录会被强制下线；如需保留原密码，可在提示上点「撤销」。`, { title: '重置密码' })) return;
   try {
     const result = await request('/students/batch', { method: 'POST', body: { studentIds: ids, resetPasswordToDefault: true } });
     clearSelection();
@@ -477,7 +477,7 @@ $('#batchResetBtn').addEventListener('click', async () => {
 $('#batchDeleteBtn').addEventListener('click', async () => {
   const ids = Array.from(state.selected);
   if (ids.length === 0) return;
-  if (!await confirmDialog(`确定删除这 ${ids.length} 位成员吗？该操作不可撤销，他们也将无法再登录。`, { title: '批量删除', confirmText: '删除', danger: true })) return;
+  if (!await confirmDialog(`确定删除这 ${ids.length} 位成员吗？他们将无法再登录；删除后可在提示上点「撤销」还原。`, { title: '批量删除', confirmText: '删除', danger: true })) return;
   try {
     const result = await request('/students/batch-delete', { method: 'POST', body: { studentIds: ids } });
     clearSelection();
@@ -628,7 +628,7 @@ function showEditorMessage(text) {
 $('#addStudentBtn').addEventListener('click', () => openEditor(null));
 
 async function removeStudent(item) {
-  if (!await confirmDialog(`确定删除「${item.name}（${item.studentId}）」吗？该操作不可撤销，学员将无法再登录。`, { title: '删除成员', confirmText: '删除', danger: true })) return;
+  if (!await confirmDialog(`确定删除「${item.name}（${item.studentId}）」吗？该学员将无法再登录；删除后可在提示上点「撤销」还原。`, { title: '删除成员', confirmText: '删除', danger: true })) return;
   try {
     const result = await request(`/students/${encodeURIComponent(item.studentId)}`, { method: 'DELETE' });
     await loadStudents();
@@ -812,7 +812,7 @@ $('#mediaBatchForm').addEventListener('submit', async (event) => {
         if (file) targets.push({ dir, name: file.name });
       }
       if (targets.length === 0) return showMediaBatchMessage('这些学员在该槽位都没有专属图，无需删除');
-      if (!await confirmDialog(`将删除 ${targets.length} 位学员在「${slot}」的专属图，继续吗？`, { title: '删除专属图', confirmText: '删除', danger: true })) return;
+      if (!await confirmDialog(`将删除 ${targets.length} 位学员在「${slot}」的专属图（媒体文件删除后无法撤销），继续吗？`, { title: '删除专属图', confirmText: '删除', danger: true })) return;
 
       let done = 0;
       let failed = 0;
@@ -971,7 +971,7 @@ async function upload({ kind, dir, name, file, overwrite }) {
 }
 
 async function deleteMedia(kind, dir, name) {
-  if (!await confirmDialog(`确定删除 ${dir ? `${dir}/` : ''}${name} 吗？`, { title: '删除文件', confirmText: '删除', danger: true })) return;
+  if (!await confirmDialog(`确定删除 ${dir ? `${dir}/` : ''}${name} 吗？媒体文件删除后无法撤销。`, { title: '删除文件', confirmText: '删除', danger: true })) return;
   try {
     await request(`/media?kind=${kind}&dir=${encodeURIComponent(dir || '')}&name=${encodeURIComponent(name)}`, { method: 'DELETE' });
     await loadMedia();
