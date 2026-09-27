@@ -494,6 +494,21 @@ module.exports = function createAdminRouter({ db }) {
     sendWorkbook(res, records.exportBuffer(listStudents.all(LIST_LIMIT_MAX * 100, 0)), '学员名单.xlsx');
   });
 
+  // 只导出勾选的成员：ID 列表可能上百个，放不进 URL，所以用 POST
+  router.post('/export/xlsx', requireAdmin, jsonBody, (req, res) => {
+    const ids = readBatchIds(req.body);
+    if (ids.length === 0) return res.status(400).json({ error: '请先勾选成员' });
+    if (ids.length > BATCH_LIMIT) return res.status(400).json({ error: `一次最多导出 ${BATCH_LIMIT} 人` });
+
+    const rows = ids.map(id => findStudent.get(id)).filter(Boolean).sort((a, b) => a.student_id.localeCompare(b.student_id));
+    if (rows.length === 0) return res.status(404).json({ error: '勾选的成员都不存在' });
+
+    res.attachment('学员名单.xlsx');
+    res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.set('X-Exported-Count', String(rows.length));
+    res.send(records.exportBuffer(rows));
+  });
+
   router.get('/export/template.xlsx', requireAdmin, (req, res) => {
     sendWorkbook(res, records.templateBuffer(), '导入模板.xlsx');
   });

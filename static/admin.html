@@ -51,6 +51,7 @@
         <span class="grow"></span>
         <button id="batchEditBtn" class="primary" type="button">批量修改</button>
         <button id="batchMediaBtn" class="primary" type="button">批量媒体</button>
+        <button id="batchExportBtn" class="ghost" type="button">导出所选</button>
         <button id="batchResetBtn" class="ghost" type="button">重置密码</button>
         <button id="batchDeleteBtn" class="danger" type="button">批量删除</button>
         <button id="batchClearBtn" class="ghost" type="button">取消选择</button>
@@ -133,6 +134,7 @@
 
       <h2>导出</h2>
       <p><a class="ghost" href="/api/admin/export/xlsx">下载全部成员 Excel</a></p>
+      <p class="muted">只想导出部分成员？到「成员」页勾选后在批量操作条上点「导出所选」。</p>
       <p class="muted">密码列必然为空：库里只存哈希，导不出来。重新导入时，老学员的密码会被保留（密码列空白），新学员用「学号后六位」作初始密码。</p>
 
       <h2>预览结果</h2>

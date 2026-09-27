@@ -358,6 +358,51 @@ $('#selectAll').addEventListener('change', (event) => {
 
 $('#batchClearBtn').addEventListener('click', clearSelection);
 
+// 只导出勾选的成员：Post 一份 id 列表，拿回 xlsx 二进制再触发下载
+$('#batchExportBtn').addEventListener('click', async () => {
+  const ids = Array.from(state.selected);
+  if (ids.length === 0) return;
+
+  const button = $('#batchExportBtn');
+  button.disabled = true;
+  try {
+    const response = await fetchWithRetry(`${API}/export/xlsx`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentIds: ids }),
+    });
+
+    if (!response.ok) {
+      let data = null;
+      try {
+        data = await response.json();
+      } catch {
+        // 非 JSON（比如 nginx 的错误页）走下面的兜底文案
+      }
+      const error = new Error((data && data.error) || `导出失败（${response.status}）`);
+      error.status = response.status;
+      throw error;
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = el('a');
+    link.href = url;
+    link.download = `学员名单-所选${ids.length}人.xlsx`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    toast(`已导出 ${ids.length} 位成员`);
+  } catch (error) {
+    if (error.status === 401) return showLogin('登录已过期，请重新登录');
+    showError(error);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 function showBatchMessage(text) {
   const message = $('#batchMessage');
   message.textContent = text;
