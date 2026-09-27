@@ -261,6 +261,19 @@
   </form>
 </div>
 
+<!-- 统一对话框：替代原生的 confirm / alert / prompt -->
+<div id="dialogOverlay" class="overlay dialog-overlay" hidden>
+  <div class="card dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+    <h2 id="dialogTitle">确认操作</h2>
+    <p id="dialogMessage" class="dialog-message"></p>
+    <input id="dialogInput" class="field" type="text" hidden>
+    <div class="toolbar">
+      <button id="dialogCancel" class="ghost" type="button">取消</button>
+      <button id="dialogConfirm" class="primary" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
 <script src="admin.js"></script>
 </body>
 </html>

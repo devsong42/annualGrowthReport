@@ -43,6 +43,65 @@ async function fetchWithRetry(url, init) {
   }
 }
 
+/* ---------- 统一对话框（替代原生 confirm / alert / prompt） ---------- */
+
+let dialogResolve = null;
+let dialogKind = 'confirm';
+
+function showDialog(kind, message, options = {}) {
+  const { title, confirmText = '确定', cancelText = '取消', danger = false, value = '' } = options;
+  return new Promise((resolve) => {
+    dialogResolve = resolve;
+    dialogKind = kind;
+
+    $('#dialogTitle').textContent = title || (kind === 'confirm' ? '确认操作' : '提示');
+    $('#dialogMessage').textContent = message;
+    $('#dialogConfirm').textContent = confirmText;
+    $('#dialogConfirm').className = danger ? 'danger' : 'primary';
+
+    const cancel = $('#dialogCancel');
+    cancel.textContent = cancelText;
+    cancel.hidden = kind === 'alert'; // 纯提示只留一个按钮
+
+    const input = $('#dialogInput');
+    input.hidden = kind !== 'prompt';
+    input.value = value;
+
+    $('#dialogOverlay').hidden = false;
+    if (kind === 'prompt') setTimeout(() => input.focus(), 30);
+  });
+}
+
+function settleDialog(confirmed) {
+  const resolve = dialogResolve;
+  const kind = dialogKind;
+  dialogResolve = null;
+  $('#dialogOverlay').hidden = true;
+  if (!resolve) return;
+  if (kind === 'confirm') resolve(confirmed);
+  else if (kind === 'prompt') resolve(confirmed ? $('#dialogInput').value : null);
+  else resolve(undefined);
+}
+
+const confirmDialog = (message, options) => showDialog('confirm', message, options);
+const alertDialog = (message, options) => showDialog('alert', message, options);
+const promptDialog = (message, value) => showDialog('prompt', message, { value });
+
+$('#dialogConfirm').addEventListener('click', () => settleDialog(true));
+$('#dialogCancel').addEventListener('click', () => settleDialog(false));
+$('#dialogOverlay').addEventListener('click', (event) => {
+  if (event.target === $('#dialogOverlay')) settleDialog(false); // 点空白处等于取消
+});
+$('#dialogInput').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    settleDialog(true);
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !$('#dialogOverlay').hidden) settleDialog(false);
+});
+
 async function request(path, options = {}) {
   const { method = 'GET', body, raw = false, headers = {} } = options;
   const response = await fetchWithRetry(`${API}${path}`, {
@@ -275,7 +334,7 @@ $('#batchForm').addEventListener('submit', async (event) => {
 
   const label = $('#batchField').selectedOptions[0].textContent;
   const shown = String(raw).trim() || '（清空）';
-  if (!window.confirm(`确定把 ${ids.length} 位成员的「${label}」改成「${shown}」吗？`)) return;
+  if (!await confirmDialog(`确定把 ${ids.length} 位成员的「${label}」改成「${shown}」吗？`, { title: '批量修改' })) return;
 
   const submit = $('#batchForm button[type="submit"]');
   submit.disabled = true;
@@ -285,7 +344,7 @@ $('#batchForm').addEventListener('submit', async (event) => {
     clearSelection();
     await loadStudents();
     await loadMedia();
-    window.alert(`已更新 ${result.updated} 位成员`
+    await alertDialog(`已更新 ${result.updated} 位成员`
       + (result.unchanged ? `，${result.unchanged} 位无变化` : '')
       + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
   } catch (error) {
@@ -299,12 +358,12 @@ $('#batchForm').addEventListener('submit', async (event) => {
 $('#batchResetBtn').addEventListener('click', async () => {
   const ids = Array.from(state.selected);
   if (ids.length === 0) return;
-  if (!window.confirm(`确定把这 ${ids.length} 位成员的密码重置为「学号后六位」吗？他们在其他设备上的登录会被强制下线。`)) return;
+  if (!await confirmDialog(`确定把这 ${ids.length} 位成员的密码重置为「学号后六位」吗？他们在其他设备上的登录会被强制下线。`, { title: '重置密码' })) return;
   try {
     const result = await request('/students/batch', { method: 'POST', body: { studentIds: ids, resetPasswordToDefault: true } });
     clearSelection();
     await loadStudents();
-    window.alert(`已重置 ${result.passwordReset} 位成员的密码`
+    await alertDialog(`已重置 ${result.passwordReset} 位成员的密码`
       + (result.otherSessionsRemoved ? `，注销了 ${result.otherSessionsRemoved} 个登录会话` : ''));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
@@ -315,13 +374,13 @@ $('#batchResetBtn').addEventListener('click', async () => {
 $('#batchDeleteBtn').addEventListener('click', async () => {
   const ids = Array.from(state.selected);
   if (ids.length === 0) return;
-  if (!window.confirm(`确定删除这 ${ids.length} 位成员吗？该操作不可撤销，他们也将无法再登录。`)) return;
+  if (!await confirmDialog(`确定删除这 ${ids.length} 位成员吗？该操作不可撤销，他们也将无法再登录。`, { title: '批量删除', confirmText: '删除', danger: true })) return;
   try {
     const result = await request('/students/batch-delete', { method: 'POST', body: { studentIds: ids } });
     clearSelection();
     await loadStudents();
     await loadMedia();
-    window.alert(`已删除 ${result.deleted} 位成员`
+    await alertDialog(`已删除 ${result.deleted} 位成员`
       + (result.sessionsRemoved ? `，注销 ${result.sessionsRemoved} 个登录会话` : '')
       + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
   } catch (error) {
@@ -342,7 +401,7 @@ $('#refreshBtn').addEventListener('click', () => {
 });
 
 function showError(error) {
-  window.alert(error.message);
+  return alertDialog(error.message, { title: '操作失败' });
 }
 
 /* ---------- 新增 / 编辑 ---------- */
@@ -437,17 +496,17 @@ $('#editorForm').addEventListener('submit', async (event) => {
       await loadStudents();
       await loadMedia();
       if (result.changed.length === 0 && result.otherSessionsRemoved === 0) {
-        window.alert('没有任何改动');
+        await alertDialog('没有任何改动');
       } else {
         const extra = result.otherSessionsRemoved > 0 ? `，并让该学员 ${result.otherSessionsRemoved} 个设备下线` : '';
-        window.alert(`已保存：${result.changed.join('、') || '无字段变化'}${extra}`);
+        await alertDialog(`已保存：${result.changed.join('、') || '无字段变化'}${extra}`);
       }
     } else {
       const result = await request('/students', { method: 'POST', body: payload });
       closeEditor();
       await loadStudents();
       await loadMedia();
-      window.alert(result.usedDefaultPassword ? '已新增，初始密码为学号后六位' : '已新增');
+      await alertDialog(result.usedDefaultPassword ? '已新增，初始密码为学号后六位' : '已新增');
     }
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
@@ -466,12 +525,12 @@ function showEditorMessage(text) {
 $('#addStudentBtn').addEventListener('click', () => openEditor(null));
 
 async function removeStudent(item) {
-  if (!window.confirm(`确定删除「${item.name}（${item.studentId}）」吗？该操作不可撤销，学员将无法再登录。`)) return;
+  if (!await confirmDialog(`确定删除「${item.name}（${item.studentId}）」吗？该操作不可撤销，学员将无法再登录。`, { title: '删除成员', confirmText: '删除', danger: true })) return;
   try {
     const result = await request(`/students/${encodeURIComponent(item.studentId)}`, { method: 'DELETE' });
     await loadStudents();
     await loadMedia();
-    window.alert(`已删除${result.sessionsRemoved > 0 ? `，并注销其 ${result.sessionsRemoved} 个登录会话` : ''}`);
+    await alertDialog(`已删除${result.sessionsRemoved > 0 ? `，并注销其 ${result.sessionsRemoved} 个登录会话` : ''}`);
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     showError(error);
@@ -603,7 +662,7 @@ $('#mediaBatchForm').addEventListener('submit', async (event) => {
       clearSelection();
       await loadStudents();
       await loadMedia();
-      window.alert(`已更新 ${result.updated} 位成员`
+      await alertDialog(`已更新 ${result.updated} 位成员`
         + (result.unchanged ? `，${result.unchanged} 位无变化` : '')
         + (result.skipped.length ? `，跳过 ${result.skipped.length} 位` : ''));
       return;
@@ -619,7 +678,7 @@ $('#mediaBatchForm').addEventListener('submit', async (event) => {
       if (file.size > state.meta.limits.image) return showMediaBatchMessage(`图片不能超过 ${Math.round(state.meta.limits.image / 1024 / 1024)}MB`);
 
       const slot = $('#mediaBatchSlotKey').value;
-      if (!window.confirm(`将把这张图写进 ${ids.length} 位学员各自的专属目录（同名直接覆盖），继续吗？`)) return;
+      if (!await confirmDialog(`将把这张图写进 ${ids.length} 位学员各自的专属目录（同名直接覆盖），继续吗？`, { title: '批量上传专属图', confirmText: '上传' })) return;
 
       let done = 0;
       let failed = 0;
@@ -650,7 +709,7 @@ $('#mediaBatchForm').addEventListener('submit', async (event) => {
         if (file) targets.push({ dir, name: file.name });
       }
       if (targets.length === 0) return showMediaBatchMessage('这些学员在该槽位都没有专属图，无需删除');
-      if (!window.confirm(`将删除 ${targets.length} 位学员在「${slot}」的专属图，继续吗？`)) return;
+      if (!await confirmDialog(`将删除 ${targets.length} 位学员在「${slot}」的专属图，继续吗？`, { title: '删除专属图', confirmText: '删除', danger: true })) return;
 
       let done = 0;
       let failed = 0;
@@ -773,11 +832,11 @@ async function uploadImage(file, dir, key, overwrite) {
   const extensions = state.meta.extensions.image;
   const ext = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
   if (!extensions.includes(ext)) {
-    window.alert(`只支持 ${extensions.join(' / ')} 格式；iPhone 的 HEIC 请先转成 JPG 再传。`);
+    await alertDialog(`只支持 ${extensions.join(' / ')} 格式；iPhone 的 HEIC 请先转成 JPG 再传。`);
     return;
   }
   if (file.size > state.meta.limits.image) {
-    window.alert(`图片不能超过 ${Math.round(state.meta.limits.image / 1024 / 1024)}MB`);
+    await alertDialog(`图片不能超过 ${Math.round(state.meta.limits.image / 1024 / 1024)}MB`);
     return;
   }
 
@@ -786,11 +845,11 @@ async function uploadImage(file, dir, key, overwrite) {
     const result = await upload({ kind: 'image', dir, name, file, overwrite });
     await loadMedia();
     if (result.shadows && result.shadows.length > 0) {
-      window.alert(`已上传，但同名的 ${result.shadows.join('、')} 优先级更高，这张图不会生效。\n需要的话请把那个文件删掉。`);
+      await alertDialog(`已上传，但同名的 ${result.shadows.join('、')} 优先级更高，这张图不会生效。\n需要的话请把那个文件删掉。`);
     }
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
-    if (error.status === 409 && window.confirm('同名文件已存在，要覆盖吗？')) {
+    if (error.status === 409 && await confirmDialog('同名文件已存在，要覆盖吗？', { title: '覆盖文件', confirmText: '覆盖' })) {
       return uploadImage(file, dir, key, true);
     }
     showError(error);
@@ -809,7 +868,7 @@ async function upload({ kind, dir, name, file, overwrite }) {
 }
 
 async function deleteMedia(kind, dir, name) {
-  if (!window.confirm(`确定删除 ${dir ? `${dir}/` : ''}${name} 吗？`)) return;
+  if (!await confirmDialog(`确定删除 ${dir ? `${dir}/` : ''}${name} 吗？`, { title: '删除文件', confirmText: '删除', danger: true })) return;
   try {
     await request(`/media?kind=${kind}&dir=${encodeURIComponent(dir || '')}&name=${encodeURIComponent(name)}`, { method: 'DELETE' });
     await loadMedia();
@@ -872,7 +931,7 @@ async function assignMusic(student, name, disable = false) {
     });
     await loadStudents();
     await loadMedia();
-    window.alert(disable ? '已取消该学员的音乐' : (name ? `已把 ${name} 指定给 ${student.name}` : '已恢复默认规则'));
+    await alertDialog(disable ? '已取消该学员的音乐' : (name ? `已把 ${name} 指定给 ${student.name}` : '已恢复默认规则'));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     showError(error);
@@ -892,16 +951,16 @@ $('#musicFile').addEventListener('change', (event) => {
 $('#uploadMusicBtn').addEventListener('click', async () => {
   const input = $('#musicFile');
   const file = input.files && input.files[0];
-  if (!file) return window.alert('请先选择一个音频文件');
+  if (!file) return await alertDialog('请先选择一个音频文件');
 
   const extensions = state.meta.extensions.music;
   const ext = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
-  if (!extensions.includes(ext)) return window.alert(`只支持 ${extensions.join(' / ')} 格式`);
-  if (file.size > state.meta.limits.music) return window.alert(`音乐不能超过 ${Math.round(state.meta.limits.music / 1024 / 1024)}MB`);
+  if (!extensions.includes(ext)) return await alertDialog(`只支持 ${extensions.join(' / ')} 格式`);
+  if (file.size > state.meta.limits.music) return await alertDialog(`音乐不能超过 ${Math.round(state.meta.limits.music / 1024 / 1024)}MB`);
 
   const student = state.students.find(item => item.studentId === state.mediaStudentId);
   const suggested = student ? `${student.studentId}${ext}` : file.name;
-  const name = window.prompt('保存为哪个文件名？（用学号命名可自动归属该学员）', suggested);
+  const name = await promptDialog('保存为哪个文件名？（用学号命名可自动归属该学员）', suggested);
   if (!name) return;
 
   try {
@@ -909,17 +968,17 @@ $('#uploadMusicBtn').addEventListener('click', async () => {
     input.value = '';
     $('#musicFileName').textContent = '';
     await loadMedia();
-    window.alert(`已上传 ${result.file ? result.file.name : name}`);
+    await alertDialog(`已上传 ${result.file ? result.file.name : name}`);
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
     if (error.status === 409) {
-      if (!window.confirm('同名文件已存在，要覆盖吗？')) return;
+      if (!await confirmDialog('同名文件已存在，要覆盖吗？', { title: '覆盖文件', confirmText: '覆盖' })) return;
       try {
         await upload({ kind: 'music', dir: '', name: name.trim(), file, overwrite: true });
         input.value = '';
         $('#musicFileName').textContent = '';
         await loadMedia();
-        window.alert('已覆盖');
+        await alertDialog('已覆盖');
       } catch (err) {
         showError(err);
       }
@@ -1047,7 +1106,7 @@ $('#batchUploadBtn').addEventListener('click', async () => {
   const overwrite = $('#batchOverwrite').checked;
   const ready = batchPlan.filter(item => item.status === 'ready');
   if (ready.length === 0) return;
-  if (!window.confirm(`将上传 ${ready.length} 个文件${overwrite ? '（同名文件直接覆盖）' : '（遇到同名文件会跳过）'}，继续吗？`)) return;
+  if (!await confirmDialog(`将上传 ${ready.length} 个文件${overwrite ? '（同名文件直接覆盖）' : '（遇到同名文件会跳过）'}，继续吗？`, { title: '批量上传', confirmText: '开始上传' })) return;
 
   const progress = $('#batchProgress');
   batchUploading = true;
@@ -1124,7 +1183,7 @@ function hasChanges(data) {
 
 $('#previewTextBtn').addEventListener('click', async () => {
   const text = $('#importText').value;
-  if (!text.trim()) return window.alert('请先粘贴内容');
+  if (!text.trim()) return await alertDialog('请先粘贴内容');
   try {
     const data = await request('/import/text/preview', { method: 'POST', body: { text } });
     state.preview = { source: 'text', text, file: null };
@@ -1139,15 +1198,15 @@ $('#previewTextBtn').addEventListener('click', async () => {
 $('#commitTextBtn').addEventListener('click', async () => {
   if (state.preview.source !== 'text') return;
   if ($('#importText').value !== state.preview.text) {
-    return window.alert('内容在预览后又被改过，请重新预览再导入');
+    return await alertDialog('内容在预览后又被改过，请重新预览再导入');
   }
-  if (!window.confirm('确认按预览结果写入数据库吗？')) return;
+  if (!await confirmDialog('确认按预览结果写入数据库吗？', { title: '确认导入', confirmText: '写入数据库' })) return;
   try {
     const result = await request('/import/text', { method: 'POST', body: { text: state.preview.text } });
     $('#commitTextBtn').disabled = true;
     await loadStudents();
     await loadMedia();
-    window.alert(`导入完成：写入 ${result.imported} 条，无变化 ${result.unchanged} 条，跳过 ${result.skipped.length} 条`
+    await alertDialog(`导入完成：写入 ${result.imported} 条，无变化 ${result.unchanged} 条，跳过 ${result.skipped.length} 条`
       + (result.defaulted ? `，其中 ${result.defaulted} 人使用初始密码` : ''));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');
@@ -1164,7 +1223,7 @@ $('#excelFile').addEventListener('change', (event) => {
 $('#previewExcelBtn').addEventListener('click', async () => {
   const input = $('#excelFile');
   const file = input.files && input.files[0];
-  if (!file) return window.alert('请先选择 .xlsx 文件');
+  if (!file) return await alertDialog('请先选择 .xlsx 文件');
   try {
     const data = await request('/import/xlsx/preview', {
       method: 'POST',
@@ -1184,7 +1243,7 @@ $('#previewExcelBtn').addEventListener('click', async () => {
 $('#commitExcelBtn').addEventListener('click', async () => {
   const file = state.preview.file;
   if (state.preview.source !== 'xlsx' || !file) return;
-  if (!window.confirm('确认按预览结果写入数据库吗？')) return;
+  if (!await confirmDialog('确认按预览结果写入数据库吗？', { title: '确认导入', confirmText: '写入数据库' })) return;
   try {
     const result = await request('/import/xlsx', {
       method: 'POST',
@@ -1195,7 +1254,7 @@ $('#commitExcelBtn').addEventListener('click', async () => {
     $('#commitExcelBtn').disabled = true;
     await loadStudents();
     await loadMedia();
-    window.alert(`导入完成：写入 ${result.imported} 条，无变化 ${result.unchanged} 条，跳过 ${result.skipped.length} 条`
+    await alertDialog(`导入完成：写入 ${result.imported} 条，无变化 ${result.unchanged} 条，跳过 ${result.skipped.length} 条`
       + (result.defaulted ? `，其中 ${result.defaulted} 人使用初始密码` : ''));
   } catch (error) {
     if (error.status === 401) return showLogin('登录已过期，请重新登录');

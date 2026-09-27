@@ -327,6 +327,20 @@ main { padding: 12px 16px 60px; }
 
 audio { width: 100%; margin-top: 4px; }
 
+/* ---------- 统一对话框（确认 / 提示 / 输入） ---------- */
+
+.dialog-overlay { align-items: center; }
+.dialog { width: 100%; max-width: 420px; display: grid; gap: 14px; }
+.dialog-message {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: pre-line; /* 提示里带 \n 时按换行显示 */
+  word-break: break-word;
+}
+.dialog .toolbar { margin: 0; justify-content: flex-end; }
+.dialog .toolbar button { min-width: 92px; }
+
 @media (max-width: 640px) {
   main { padding: 12px 12px 60px; }
   .row-actions { display: grid; grid-template-columns: repeat(2, 1fr); }

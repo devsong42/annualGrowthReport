@@ -284,6 +284,8 @@ docker compose exec -T app node scripts/set-admin.js admin --delete # 删除
 | `POST /media/upload?kind=&dir=&name=&overwrite=` | 上传/替换（`dir` 为空=共享图，非空=写入该学员目录并自动建目录） |
 | `DELETE /media?kind=&dir=&name=` | 删除文件（顺带回收空目录） |
 
+**面板里的提示与确认**：不用浏览器的原生 `confirm/alert/prompt`（样式与深色主题不一致、手机上还很丑），统一走页面内的对话框组件（`#dialogOverlay` + `confirmDialog / alertDialog / promptDialog` 三个 Promise 封装）。危险操作（删除成员、批量删除、删除文件、删除专属图）的确认按钮是红色，标题与按钮文案按场景区分；点空白处或按 Esc 等于取消。
+
 **实现要点（改动时请保持这些约束）**：
 
 - 成员数据规则只有一处：`lib/student-records.js` 被 CLI 与面板共用 —— Excel 导入、文本批量、单条新增/编辑用同一套校验与密码三规则，不要另写一套
