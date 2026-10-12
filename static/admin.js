@@ -427,12 +427,10 @@ $('#batchEditBtn').addEventListener('click', () => {
 
 $('#batchCancel').addEventListener('click', () => { $('#batchOverlay').hidden = true; });
 
-// 入会日期用日期选择器，其它字段用普通输入框
+// 入会日期给出示例格式，其它字段说明「留空=清空」
 function syncBatchValueInput() {
   const isDate = $('#batchField').value === 'joinDate';
-  const input = $('#batchValue');
-  input.type = isDate ? 'date' : 'text';
-  input.placeholder = isDate ? '' : '留空表示清空该字段';
+  $('#batchValue').placeholder = isDate ? '2024-09-01' : '留空表示清空该字段';
 }
 
 $('#batchField').addEventListener('change', syncBatchValueInput);
