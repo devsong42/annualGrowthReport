@@ -21,7 +21,7 @@ const DUMMY_HASH = bcrypt.hashSync('not-a-real-admin-password', 10);
 const FIELD_TO_HEADER = {
   name: '姓名',
   department: '部门',
-  joinDays: '加入天数',
+  joinDate: '入会日期',
   volunteerHours: '志愿时长',
   activityCount: '活动次数',
   partner: '年度伙伴',
@@ -36,7 +36,8 @@ function toStudentDto(row) {
     studentId: row.student_id,
     name: row.name,
     department: row.department,
-    joinDays: row.join_days,
+    joinDate: row.join_date,
+    joinDays: records.computeJoinDays(row.join_date),
     volunteerHours: row.volunteer_hours,
     activityCount: row.activity_count,
     partner: row.partner,
@@ -216,7 +217,7 @@ module.exports = function createAdminRouter({ db }) {
         studentId,
         name: existing.name,
         department: existing.department,
-        joinDays: existing.join_days,
+        joinDate: existing.join_date,
         volunteerHours: existing.volunteer_hours,
         activityCount: existing.activity_count,
         partner: existing.partner,
@@ -276,7 +277,7 @@ module.exports = function createAdminRouter({ db }) {
 
   const BATCH_LIMIT = 500;
   // 允许批量设置的字段（学号/姓名/密码不能批量改，密码走独立的「重置」）
-  const BATCH_FIELDS = ['department', 'joinDays', 'volunteerHours', 'activityCount', 'partner', 'message', 'bgDir', 'bgMusic'];
+  const BATCH_FIELDS = ['department', 'joinDate', 'volunteerHours', 'activityCount', 'partner', 'message', 'bgDir', 'bgMusic'];
 
   function readBatchIds(body) {
     const list = Array.isArray(body && body.studentIds) ? body.studentIds : [];
@@ -379,7 +380,8 @@ module.exports = function createAdminRouter({ db }) {
       studentId: row.student_id,
       name: row.name,
       department: row.department,
-      joinDays: row.join_days,
+      joinDate: row.join_date,
+      joinDays: records.computeJoinDays(row.join_date),
       volunteerHours: row.volunteer_hours,
       activityCount: row.activity_count,
       partner: row.partner,

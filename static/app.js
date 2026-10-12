@@ -87,6 +87,11 @@ function playAnimations(root) {
 /* ---------- 大数字滚动 ---------- */
 
 function countUp(node, target) {
+  // 字段没填（比如没录入入会日期）时不显示 0，直接给个破折号
+  if (target === null || target === undefined || target === '') {
+    node.textContent = '—';
+    return;
+  }
   const value = Number(target);
   const end = Number.isFinite(value) ? value : 0;
   const decimals = Number.isInteger(end) ? 0 : 1;

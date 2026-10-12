@@ -22,7 +22,8 @@
 
 **数据字段（每名学员）**
 
-学号、密码、姓名、部门、加入天数、志愿时长、活动次数、年度伙伴、部长寄语
+学号、密码、姓名、部门、入会日期、志愿时长、活动次数、年度伙伴、部长寄语
+（报告里的「加入天数」不放库，由入会日期实时算出）
 
 ## 3. 方案演进（对话结论）
 
@@ -59,7 +60,7 @@ CREATE TABLE students (
   student_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   department TEXT,
-  join_days INTEGER,
+  join_date TEXT,          -- 入会日期，格式 YYYY-MM-DD；加入天数由它实时计算
   volunteer_hours REAL,
   activity_count INTEGER,
   partner TEXT,
@@ -73,6 +74,8 @@ CREATE TABLE sessions (
   expire INTEGER
 );
 ```
+
+**老库迁移**：旧字段 `join_days`（整数天）会按「今天往前推 N 天」折算成 `join_date`，之后该列被删除 —— 由 `db.js` 在启动时自动执行，无需手工操作。
 
 ## 6. API 设计
 
@@ -203,7 +206,9 @@ docker compose exec app node scripts/import-excel.js --template
 docker compose exec app node scripts/import-excel.js import/学员数据.xlsx
 ```
 
-表头（中文，第一行）：`学号、密码、姓名、部门、加入天数、志愿时长、活动次数、年度伙伴、部长寄语、背景图目录、背景音乐`（最后两列可选）。
+表头（中文，第一行）：`学号、密码、姓名、部门、入会日期、志愿时长、活动次数、年度伙伴、部长寄语、背景图目录、背景音乐`（最后两列可选）。
+
+「入会日期」认多种写法：`2024-09-01`、`2024/9/1`、`2024.9.1`、`2024年9月1日`、`20240901`，Excel 的日期格式单元格与日期序列号也能识别；写错会逐行报错并跳过。旧模板里只有「加入天数」列时会兼容处理：按导入当天往前折算成日期（一次性折算，之后以日期为准）。
 
 导入规则：按学号 upsert（`INSERT ... ON CONFLICT DO UPDATE`）。密码列的三种情况：
 
@@ -274,7 +279,7 @@ docker compose exec -T app node scripts/set-admin.js admin --delete # 删除
 | `GET /meta` | 下发中文表头、7 个图片槽位、大小上限、扩展名白名单、`media.writable`（诊断挂载是否可写） |
 | `GET /students?q=&limit=` | 成员列表（不含 password_hash），搜索用 `instr()` |
 | `POST /students` / `PUT /students/:studentId` / `DELETE /students/:studentId` | 新增 / 局部更新（只改提交的字段；`password` 缺省=不改，改了会踢掉该学员其他设备）/ 删除（并清其会话） |
-| `POST /students/batch` | 批量修改：`set` 指定要改的字段（限部门/加入天数/志愿时长/活动次数/年度伙伴/部长寄语/背景图目录/背景音乐），或 `resetPasswordToDefault:true` 把密码批量重置为「学号后六位」；一次最多 500 人，重置密码会注销这些学员的会话 |
+| `POST /students/batch` | 批量修改：`set` 指定要改的字段（限部门/入会日期/志愿时长/活动次数/年度伙伴/部长寄语/背景图目录/背景音乐），或 `resetPasswordToDefault:true` 把密码批量重置为「学号后六位」；一次最多 500 人，重置密码会注销这些学员的会话 |
 | `POST /students/batch-delete` | 批量删除（连带清会话） |
 | `POST /students/undo` | 撤销上一次改动：用删除/批量/编辑响应里返回的 `undo.token` 还原改动前的成员记录（令牌一次性使用） |
 | `GET /students/:studentId/report` | 预览该学员会看到的报告与资源解析结果（排查图片/音乐是否配对） |

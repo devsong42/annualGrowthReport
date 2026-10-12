@@ -303,7 +303,7 @@ function renderStudents() {
     main.append(el('strong', null, `${item.name}（${item.studentId}）`));
     const facts = [
       item.department || '未填部门',
-      `加入 ${item.joinDays ?? '-'} 天`,
+      `入会 ${item.joinDate || '未填'}（${item.joinDays ?? '-'} 天）`,
       `志愿 ${item.volunteerHours ?? '-'} 小时`,
       `活动 ${item.activityCount ?? '-'} 次`,
     ];
@@ -421,12 +421,23 @@ $('#batchEditBtn').addEventListener('click', () => {
   message.hidden = true;
   $('#batchSummary').textContent = `将修改已勾选的 ${state.selected.size} 位成员`;
   $('#batchValue').value = '';
+  syncBatchValueInput();
   $('#batchOverlay').hidden = false;
 });
 
 $('#batchCancel').addEventListener('click', () => { $('#batchOverlay').hidden = true; });
 
-const BATCH_NUMERIC_FIELDS = new Set(['joinDays', 'volunteerHours', 'activityCount']);
+// 入会日期用日期选择器，其它字段用普通输入框
+function syncBatchValueInput() {
+  const isDate = $('#batchField').value === 'joinDate';
+  const input = $('#batchValue');
+  input.type = isDate ? 'date' : 'text';
+  input.placeholder = isDate ? '' : '留空表示清空该字段';
+}
+
+$('#batchField').addEventListener('change', syncBatchValueInput);
+
+const BATCH_NUMERIC_FIELDS = new Set(['volunteerHours', 'activityCount']);
 
 $('#batchForm').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -519,7 +530,7 @@ const EDITOR_FIELDS = {
   studentId: '#f_studentId',
   name: '#f_name',
   department: '#f_department',
-  joinDays: '#f_joinDays',
+  joinDate: '#f_joinDate',
   volunteerHours: '#f_volunteerHours',
   activityCount: '#f_activityCount',
   partner: '#f_partner',
@@ -536,7 +547,7 @@ function openEditor(item) {
   $('#f_studentId').value = item ? item.studentId : '';
   $('#f_name').value = item ? item.name : '';
   $('#f_department').value = item ? item.department || '' : '';
-  $('#f_joinDays').value = item && item.joinDays !== null ? item.joinDays : '';
+  $('#f_joinDate').value = item ? item.joinDate || '' : '';
   $('#f_volunteerHours').value = item && item.volunteerHours !== null ? item.volunteerHours : '';
   $('#f_activityCount').value = item && item.activityCount !== null ? item.activityCount : '';
   $('#f_partner').value = item ? item.partner || '' : '';
@@ -575,7 +586,7 @@ $('#editorForm').addEventListener('submit', async (event) => {
     studentId: $('#f_studentId').value.trim(),
     name: $('#f_name').value.trim(),
     department: $('#f_department').value.trim(),
-    joinDays: numberOrNull($('#f_joinDays').value),
+    joinDate: $('#f_joinDate').value.trim(),
     volunteerHours: numberOrNull($('#f_volunteerHours').value),
     activityCount: numberOrNull($('#f_activityCount').value),
     partner: $('#f_partner').value.trim(),
@@ -655,7 +666,8 @@ async function previewReport(item) {
     for (const [label, value] of [
       ['姓名', data.name],
       ['部门', data.department],
-      ['加入天数', data.joinDays],
+      ['入会日期', data.joinDate || '未填'],
+      ['加入天数', data.joinDays === null || data.joinDays === undefined ? '—（未填入会日期）' : `${data.joinDays} 天（实时计算）`],
       ['志愿时长', data.volunteerHours],
       ['活动次数', data.activityCount],
       ['年度伙伴', data.partner],

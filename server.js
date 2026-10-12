@@ -3,6 +3,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
 const media = require('./lib/media');
+const records = require('./lib/student-records');
 const createAdminRouter = require('./routes/admin');
 const SQLiteSessionStore = require('./session-store');
 const { AttemptLimiter } = require('./rate-limit');
@@ -41,7 +42,7 @@ app.use(express.json());
 
 const findStudentForLogin = db.prepare('SELECT student_id, password_hash FROM students WHERE student_id = ?');
 const findReport = db.prepare(`
-  SELECT name, department, join_days, volunteer_hours, activity_count, partner, message, bg_dir, bg_music
+  SELECT name, department, join_date, volunteer_hours, activity_count, partner, message, bg_dir, bg_music
   FROM students
   WHERE student_id = ?
 `);
@@ -170,7 +171,8 @@ app.get('/api/report', (req, res) => {
   res.json({
     name: row.name,
     department: row.department,
-    joinDays: row.join_days,
+    joinDate: row.join_date,
+    joinDays: records.computeJoinDays(row.join_date), // 加入天数由入会日期实时算
     volunteerHours: row.volunteer_hours,
     activityCount: row.activity_count,
     partner: row.partner,
