@@ -20,6 +20,19 @@ if (!SESSION_SECRET) {
 const app = express();
 app.set('trust proxy', 1);
 
+// 不做 CORS，用不到 OPTIONS 预检；Express 默认会对已注册路径回 200 + Allow，
+// 相当于未鉴权就能探出哪些管理接口存在，这里统一按「未知接口」处理
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') return res.status(404).json({ error: '接口不存在' });
+  next();
+});
+
+// API 响应一律不缓存：里面是学员个人信息，别留在浏览器磁盘缓存里
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 app.use(session({
   name: COOKIE_NAME,
   secret: SESSION_SECRET,

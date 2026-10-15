@@ -134,7 +134,16 @@ CREATE TABLE sessions (
 - 服务间通过自定义 bridge 网络 `report-network` 通信，Nginx 中 `proxy_pass http://app:3000`
 - `app.build.network: host`：容器默认 bridge 网络没有 IPv6 路由，构建期借用宿主机网络（原因见 §11）
 
-**nginx 配置要点**（`nginx/default.conf`）：静态托管 + `/api/` 反代（`proxy_read_timeout 300s`，批量导入逐行算 bcrypt 可能超过默认 60s）+ `/images/`、`/music/` 不存在时直接 404 并带 `X-Content-Type-Options: nosniff`；已启用 gzip（`comp_level 2`、`min_length 1024`，只压文本类，图片与 `/api/` 显式 `gzip off`）—— 文本资源首访从 266KB 降到约 64KB；`/admin` 302 到 `/admin.html`，面板三个文件加 `Cache-Control: no-cache`（避免部署后加载旧 JS）
+**nginx 配置要点**（`nginx/default.conf` + `nginx/snippets/security-headers.conf`）：
+
+- 静态托管 + `/api/` 反代（`proxy_read_timeout 300s`，批量导入逐行算 bcrypt 可能超过默认 60s）
+- **不做 SPA 回退**：`try_files $uri $uri/ =404`。本项目没有客户端路由，回退会把「路径写错/文件漏传」伪装成 200 的 HTML（浏览器拿到 HTML 当 JS 解析，报的却是语法错误）
+- `/admin` 与 `/admin/` 都 301 到 `/admin.html`（带尾斜杠时不加规则会回落到学员首页）；面板三个文件加 `Cache-Control: no-cache`
+- `keepalive_timeout 300s`：默认 65 秒偏短，手机端隔一会儿再操作时，复用连接的首个请求会撞上刚关闭的连接（前端有自动重试兜底，这里再放宽）
+- `client_max_body_size 8m` + `error_page 413` 返回 JSON：与后端 5MB/8MB 上限对齐，超限文件不必先完整上传再被应用拒绝
+- 安全响应头集中在 `nginx/snippets/security-headers.conf`（nosniff、X-Frame-Options、Referrer-Policy、CSP：`script-src 'self'`，因为页面没有任何内联脚本）。**注意 nginx 的规则：location 里一旦自己写了 `add_header` 就不再继承上层，所以自带 `add_header` 的 location 都要 `include` 一次这个片段**
+- 已启用 gzip（`comp_level 2`、`min_length 1024`，只压文本类，图片与 `/api/` 显式 `gzip off`）—— 文本资源首访从 266KB 降到约 64KB
+- HSTS 暂不加：现在是 HTTP，等 HTTPS 落地后再开启
 
 **常用运维命令**
 
@@ -304,3 +313,6 @@ docker compose exec -T app node scripts/set-admin.js admin --delete # 删除
 - 管理员与学员共用同一个会话 cookie：`POST /api/admin/logout` 只退管理面板；学员端的 `POST /api/logout` 会销毁整个会话（连管理面板一起退）
 - 撤销靠 `lib/undo-buffer.js`：改动前把成员的整行记录（含 `password_hash`）快照进内存并返回一次性 token；`POST /students/undo` 取出即作废，15 分钟过期或超出 20 条自动丢弃，重启容器清空。删除成员 / 批量删除 / 批量修改 / 单条编辑都会返回 `undo`；**媒体文件的删除不支持撤销**（文件本身没留底）
 - 批量媒体操作不需要新接口：指派音乐/目录走 `POST /students/batch`，上传/删除走既有的媒体接口，前端逐个学员顺序执行；上传时必须写进该学员**实际读取的目录**（显式指定过 `bgDir` 时不是学号目录）
+- `/api` 响应一律带 `Cache-Control: no-store`（里面有学员个人信息，别留在浏览器磁盘缓存里）；`OPTIONS` 统一返回 404（不做 CORS，也不需要预检；Express 默认会给已注册路径回 200 + Allow，等于未鉴权就能探出有哪些管理接口）
+- **方法不匹配一律 404 而非 405**：`/api/*` 的约定是「没匹配到就回 JSON 404」，这是有意的简化，没有外部 API 调用方
+- 性能基线（外部审计实测）：约 400 rps，并发 25 以上延迟上升但不报错；几十人规模余量充足。真要扩容的方向是给 Node 开多实例（cluster / pm2）+ nginx 负载与静态缓存，而不是优化业务代码
